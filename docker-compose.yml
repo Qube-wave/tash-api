@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tash-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tash
+      POSTGRES_PASSWORD: tash
+      POSTGRES_DB: tash
+    ports:
+      - '5432:5432'
+    volumes:
+      - tash-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tash -d tash']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tash-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - tash-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  tash-postgres-data:
+  tash-redis-data:
