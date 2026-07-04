@@ -16,5 +16,6 @@ import { NOTIFICATION_QUEUE } from 'src/jobs/job-names';
     }),
   ],
   providers: [NotificationsService],
+  exports: [NotificationsService],
 })
 export class NotificationsModule {}

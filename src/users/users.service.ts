@@ -94,6 +94,14 @@ export class UsersService {
     });
   }
 
+  async findByPhone(phoneNumber: string): Promise<User | null> {
+    return this.usersRepository.findOne({
+      where: {
+        phoneNumber,
+      },
+    });
+  }
+
   async getByUuid(uuid: string): Promise<User> {
     const user = await this.findByUuid(uuid);
 

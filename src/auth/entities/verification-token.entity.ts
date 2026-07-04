@@ -22,14 +22,21 @@ export class VerificationToken {
   tokenId!: string;
 
   @Index()
-  @Column({ type: 'integer' })
-  userId!: number;
+  @Column({ type: 'integer', nullable: true })
+  userId!: number | null;
+
+  @Index()
+  @Column({ type: 'varchar', nullable: false })
+  phoneNumber!: string | null;
 
   @Column({ type: 'enum', enum: VerificationTokenType })
   type!: VerificationTokenType;
 
   @Column({ type: 'varchar', length: 255 })
   tokenHash!: string;
+
+  @Column({ type: 'integer' })
+  attempts!: number;
 
   @Column({ type: 'timestamptz' })
   expiresAt!: Date;

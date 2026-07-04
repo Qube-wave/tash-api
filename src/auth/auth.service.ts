@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -25,12 +25,15 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
   VerifyPhoneDto,
+  VerifyPhoneNumberDto,
 } from './dto/auth.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
 import {
   VerificationToken,
   VerificationTokenType,
 } from './entities/verification-token.entity';
+import { OtpSmsNotificationData } from 'src/notifications/notifications.interface';
+import { NotificationsService } from 'src/notifications/notifications.service';
 
 export interface AuthTokens {
   accessToken: string;
@@ -55,9 +58,36 @@ export class AuthService {
     private readonly hashService: HashService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly notificationService: NotificationsService,
   ) {}
 
-  async verifyPhone(dto: VerifyPhoneNumberDto): Promise<void> {}
+  async verifyPhoneNumber(
+    dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
+    const { phoneNumber } = dto;
+
+    const existingUser = await this.usersService.findByPhone(phoneNumber);
+    if (existingUser) {
+      throw new BadRequestException('User with phone number already exists');
+    }
+
+    const token =
+      await this.createPhoneVerificationTokenWithPhoneNumber(phoneNumber);
+
+    const smsOtpPayload: OtpSmsNotificationData = {
+      attempts: 5,
+      length: 6,
+      otp: token,
+      phoneNumber,
+      ttl: 15,
+    };
+
+    await this.notificationService.enqueuOtpSmsNotification(smsOtpPayload);
+
+    return {
+      message: 'A verification code has been sent to your phone',
+    };
+  }
 
   async register(dto: RegisterDto): Promise<AuthResponse> {
     const user = await this.usersService.createUser({
@@ -372,6 +402,28 @@ export class AuthService {
       this.verificationTokensRepository.create({
         tokenId: randomUUID(),
         userId,
+        type: VerificationTokenType.Phone,
+        tokenHash: await this.hashService.hash(token),
+        expiresAt: new Date(
+          Date.now() + auth.verificationTokenTtlSeconds * 1000,
+        ),
+        consumedAt: null,
+      }),
+    );
+
+    return token;
+  }
+
+  private async createPhoneVerificationTokenWithPhoneNumber(
+    phoneNumber: string,
+  ): Promise<string> {
+    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+    const token = String(Math.floor(100000 + Math.random() * 900000));
+
+    await this.verificationTokensRepository.save(
+      this.verificationTokensRepository.create({
+        tokenId: randomUUID(),
+        phoneNumber,
         type: VerificationTokenType.Phone,
         tokenHash: await this.hashService.hash(token),
         expiresAt: new Date(

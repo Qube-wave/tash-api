@@ -12,6 +12,7 @@ import {
   ResetPasswordDto,
   VerifyEmailDto,
   VerifyPhoneDto,
+  VerifyPhoneNumberDto,
 } from './dto/auth.dto';
 import { AuthResponse, AuthService, AuthTokens } from './auth.service';
 
@@ -21,8 +22,8 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('verify-phone')
-  verifyPhone(@Body() dto: VerifyPhoneDto): Promise<void> {
-    return this.authService.verifyPhone();
+  verifyPhoneNumber(@Body() dto: VerifyPhoneNumberDto): Promise<void> {
+    return this.authService.verifyPhoneNumber(dto);
   }
 
   @Post('register')
