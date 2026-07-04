@@ -57,6 +57,8 @@ export class AuthService {
     private readonly configService: ConfigService,
   ) {}
 
+  async verifyPhone(dto: VerifyPhoneNumberDto): Promise<void> {}
+
   async register(dto: RegisterDto): Promise<AuthResponse> {
     const user = await this.usersService.createUser({
       email: dto.email,

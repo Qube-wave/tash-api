@@ -20,6 +20,11 @@ import { AuthResponse, AuthService, AuthTokens } from './auth.service';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Post('verify-phone')
+  verifyPhone(@Body() dto: VerifyPhoneDto): Promise<void> {
+    return this.authService.verifyPhone();
+  }
+
   @Post('register')
   register(@Body() dto: RegisterDto): Promise<AuthResponse> {
     return this.authService.register(dto);

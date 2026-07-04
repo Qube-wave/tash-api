@@ -4,6 +4,7 @@ import databaseConfig from './database.config';
 import paymentProviderConfig from './payment-provider.config';
 import redisConfig from './redis.config';
 import securityConfig from './security.config';
+import notificationsConfig from './notifications.config';
 
 export const configuration = [
   appConfig,
@@ -12,4 +13,5 @@ export const configuration = [
   paymentProviderConfig,
   redisConfig,
   securityConfig,
+  notificationsConfig,
 ];
