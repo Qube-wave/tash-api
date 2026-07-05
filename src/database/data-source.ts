@@ -1,12 +1,14 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 
 const sslEnabled = process.env.DATABASE_SSL === 'true';
+const synchronizeSchema =
+  (process.env.NODE_ENV ?? 'development') === 'development';
 
 const baseOptions: DataSourceOptions = {
   type: 'postgres',
   entities: ['dist/**/*.entity.js'],
   migrations: ['dist/database/migrations/*.js'],
-  synchronize: false,
+  synchronize: synchronizeSchema,
   migrationsRun: false,
   logging: false,
   ssl: sslEnabled ? { rejectUnauthorized: false } : false,

@@ -372,6 +372,7 @@ export class AuthService {
   private async createVerificationToken(
     userId: number,
     type: VerificationTokenType,
+    attempts: number = 5,
   ): Promise<string> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     const token = randomBytes(32).toString('base64url');
@@ -385,6 +386,7 @@ export class AuthService {
         tokenId: randomUUID(),
         userId,
         type,
+        attempts,
         tokenHash: await this.hashService.hash(token),
         expiresAt: new Date(Date.now() + ttl * 1000),
         consumedAt: null,
@@ -394,7 +396,10 @@ export class AuthService {
     return token;
   }
 
-  private async createPhoneVerificationToken(userId: number): Promise<string> {
+  private async createPhoneVerificationToken(
+    userId: number,
+    attempts: number = 5,
+  ): Promise<string> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     const token = String(Math.floor(100000 + Math.random() * 900000));
 
@@ -403,6 +408,7 @@ export class AuthService {
         tokenId: randomUUID(),
         userId,
         type: VerificationTokenType.Phone,
+        attempts,
         tokenHash: await this.hashService.hash(token),
         expiresAt: new Date(
           Date.now() + auth.verificationTokenTtlSeconds * 1000,
@@ -416,6 +422,7 @@ export class AuthService {
 
   private async createPhoneVerificationTokenWithPhoneNumber(
     phoneNumber: string,
+    attempts: number = 5,
   ): Promise<string> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     const token = String(Math.floor(100000 + Math.random() * 900000));
@@ -425,6 +432,7 @@ export class AuthService {
         tokenId: randomUUID(),
         phoneNumber,
         type: VerificationTokenType.Phone,
+        attempts,
         tokenHash: await this.hashService.hash(token),
         expiresAt: new Date(
           Date.now() + auth.verificationTokenTtlSeconds * 1000,

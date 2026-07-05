@@ -22,7 +22,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('verify-phone')
-  verifyPhoneNumber(@Body() dto: VerifyPhoneNumberDto): Promise<void> {
+  verifyPhoneNumber(
+    @Body() dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
     return this.authService.verifyPhoneNumber(dto);
   }
 

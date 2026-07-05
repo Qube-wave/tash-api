@@ -1,13 +1,16 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { DatabaseConfiguration } from '../config/database.config';
 
+const synchronizeSchema =
+  (process.env.NODE_ENV ?? 'development') === 'development';
+
 export function createTypeOrmOptions(
   config: DatabaseConfiguration,
 ): TypeOrmModuleOptions {
   const baseOptions: TypeOrmModuleOptions = {
     type: 'postgres',
     autoLoadEntities: true,
-    synchronize: false,
+    synchronize: synchronizeSchema,
     migrationsRun: false,
     migrations: ['dist/database/migrations/*.js'],
     logging: false,

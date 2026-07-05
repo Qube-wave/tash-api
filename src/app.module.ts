@@ -29,7 +29,6 @@ import { UsersModule } from './users/users.module';
 import { VirtualAccountsModule } from './virtual-accounts/virtual-accounts.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
-import { NotificationsModule } from './notifications/notifications.module';
 
 function externalConnectionsEnabled(): boolean {
   return (
@@ -105,7 +104,6 @@ const featureImports = externalConnectionsEnabled()
     CommonModule,
     HealthModule,
     ...featureImports,
-    NotificationsModule,
   ],
 })
 export class AppModule implements NestModule {

@@ -14,7 +14,7 @@ import {
 
 export class VerifyPhoneNumberDto {
   @ApiProperty({
-    name: 'Phone number',
+    name: 'phoneNumber',
     type: 'string',
     example: '+1234567890',
   })

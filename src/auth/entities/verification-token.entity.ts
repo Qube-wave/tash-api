@@ -23,11 +23,11 @@ export class VerificationToken {
 
   @Index()
   @Column({ type: 'integer', nullable: true })
-  userId!: number | null;
+  userId?: number | null;
 
   @Index()
-  @Column({ type: 'varchar', nullable: false })
-  phoneNumber!: string | null;
+  @Column({ type: 'varchar', nullable: true })
+  phoneNumber?: string | null;
 
   @Column({ type: 'enum', enum: VerificationTokenType })
   type!: VerificationTokenType;

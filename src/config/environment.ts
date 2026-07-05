@@ -24,6 +24,14 @@ export interface EnvironmentVariables {
   TRANSACTION_PIN_MAX_ATTEMPTS: number;
   TRANSACTION_PIN_LOCK_MINUTES: number;
   PAYMENT_PROVIDER: 'mock' | 'nomba';
+  TERMII_API_KEY: string;
+  TERMII_BASE_URL: string;
+  SENDCHAMP_API_KEY: string;
+  SENDCHAMP_BASE_URL: string;
+  AFRICAS_TALKING_API_KEY: string;
+  AFRICAS_TALKING_BASE_URL: string;
+  AFRICAS_TALKING_SENDER_ID: string;
+  AFRICAS_TALKING_USERNAME: string;
   SKIP_EXTERNAL_CONNECTIONS: boolean;
 }
 
@@ -137,6 +145,50 @@ export function validateEnvironment(
     'BVN_ENCRYPTION_KEY',
     'local-development-bvn-key-change-me',
   );
+  const termiiApiKey = readString(config, 'TERMII_API_KEY', '');
+  const termiiBaseUrl = readString(
+    config,
+    'TERMII_BASE_URL',
+    'https://api.ng.termii.com',
+  );
+  const sendchampApiKey = readString(config, 'SENDCHAMP_API_KEY', '');
+  const sendchampBaseUrl = readString(
+    config,
+    'SENDCHAMP_BASE_URL',
+    'https://api.sendchamp.com/api/v1',
+  );
+  const africasTalkingApiKey = readString(
+    config,
+    'AFRICAS_TALKING_API_KEY',
+    '',
+  );
+  const africasTalkingBaseUrl = readString(
+    config,
+    'AFRICAS_TALKING_BASE_URL',
+    'https://api.africastalking.com',
+  );
+  const africasTalkingSenderId = readString(
+    config,
+    'AFRICAS_TALKING_SENDER_ID',
+    '',
+  );
+  const africasTalkingUsername = readString(
+    config,
+    'AFRICAS_TALKING_USERNAME',
+    '',
+  );
+
+  for (const [key, value] of [
+    ['TERMII_BASE_URL', termiiBaseUrl],
+    ['SENDCHAMP_BASE_URL', sendchampBaseUrl],
+    ['AFRICAS_TALKING_BASE_URL', africasTalkingBaseUrl],
+  ] as const) {
+    try {
+      new URL(value);
+    } catch {
+      throw new Error(`${key} must be a valid URL`);
+    }
+  }
 
   if (environment === 'production') {
     for (const [key, value] of [
@@ -147,6 +199,29 @@ export function validateEnvironment(
       if (value.startsWith('change-me') || value.includes('development')) {
         throw new Error(`${key} must be configured for production`);
       }
+    }
+
+    if (termiiApiKey === '' || termiiApiKey === 'termii-api-key') {
+      throw new Error('TERMII_API_KEY must be configured for production');
+    }
+
+    if (sendchampApiKey === '' || sendchampApiKey === 'sendchamp-api-key') {
+      throw new Error('SENDCHAMP_API_KEY must be configured for production');
+    }
+
+    if (
+      africasTalkingApiKey === '' ||
+      africasTalkingApiKey === 'africas-talking-api-key'
+    ) {
+      throw new Error(
+        'AFRICAS_TALKING_API_KEY must be configured for production',
+      );
+    }
+
+    if (africasTalkingUsername === '') {
+      throw new Error(
+        'AFRICAS_TALKING_USERNAME must be configured for production',
+      );
     }
   }
 
@@ -198,6 +273,14 @@ export function validateEnvironment(
       15,
     ),
     PAYMENT_PROVIDER: paymentProvider as PaymentProvider,
+    TERMII_API_KEY: termiiApiKey,
+    TERMII_BASE_URL: termiiBaseUrl,
+    SENDCHAMP_API_KEY: sendchampApiKey,
+    SENDCHAMP_BASE_URL: sendchampBaseUrl,
+    AFRICAS_TALKING_API_KEY: africasTalkingApiKey,
+    AFRICAS_TALKING_BASE_URL: africasTalkingBaseUrl,
+    AFRICAS_TALKING_SENDER_ID: africasTalkingSenderId,
+    AFRICAS_TALKING_USERNAME: africasTalkingUsername,
     SKIP_EXTERNAL_CONNECTIONS: readBoolean(
       config,
       'SKIP_EXTERNAL_CONNECTIONS',
