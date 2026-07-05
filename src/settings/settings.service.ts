@@ -144,7 +144,7 @@ export class SettingsService {
     }
 
     const validPassword = await this.hashService.verify(
-      user.passwordHash,
+      user.passwordHash!,
       currentPassword,
     );
     if (!validPassword) {

@@ -1,4 +1,6 @@
 import {
+  BeforeInsert,
+  BeforeUpdate,
   Column,
   CreateDateColumn,
   Entity,
@@ -10,6 +12,7 @@ import {
 import { UserProfile } from './user-profile.entity';
 
 export enum UserStatus {
+  PendingRegistration = 'pending_registration',
   PendingVerification = 'pending_verification',
   Active = 'active',
   Suspended = 'suspended',
@@ -32,31 +35,34 @@ export class User {
   uuid!: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 255 })
-  email!: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  email!: string | null;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 32 })
   phoneNumber!: string;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 32 })
-  paymentTag!: string;
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  paymentTag!: string | null;
 
-  @Column({ type: 'varchar', length: 255 })
-  passwordHash!: string;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  passwordHash!: string | null;
 
   @Column({
     type: 'enum',
     enum: UserStatus,
+    enumName: 'user_status_enum',
     default: UserStatus.PendingVerification,
   })
   status!: UserStatus;
 
   @Column({
-    type: 'text',
+    type: 'enum',
+    enum: UserType,
+    enumName: 'user_type_enum',
     array: true,
-    default: () => "ARRAY['consumer']::text[]",
+    default: [UserType.Consumer],
   })
   userTypes!: UserType[];
 
@@ -77,4 +83,20 @@ export class User {
 
   @OneToOne(() => UserProfile, (profile) => profile.user)
   profile?: UserProfile;
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  normalizeFields() {
+    if (this.email) {
+      this.email = this.email.trim().toLowerCase();
+    }
+
+    if (this.paymentTag) {
+      this.paymentTag = this.paymentTag.trim().toLowerCase();
+    }
+
+    if (this.phoneNumber) {
+      this.phoneNumber = this.phoneNumber.trim();
+    }
+  }
 }

@@ -35,8 +35,11 @@ export class VerificationToken {
   @Column({ type: 'varchar', length: 255 })
   tokenHash!: string;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'integer', default: 0 })
   attempts!: number;
+
+  @Column({ type: 'integer' })
+  maxAttempts!: number;
 
   @Column({ type: 'timestamptz' })
   expiresAt!: Date;

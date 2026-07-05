@@ -4,6 +4,7 @@ import {
   IsEmail,
   IsISO31661Alpha2,
   IsISO4217CurrencyCode,
+  IsNotEmpty,
   IsPhoneNumber,
   IsString,
   Length,
@@ -18,8 +19,29 @@ export class VerifyPhoneNumberDto {
     type: 'string',
     example: '+1234567890',
   })
+  @IsNotEmpty()
   @IsPhoneNumber()
   phoneNumber!: string;
+}
+
+export class CompletePhoneVerificationDto {
+  @ApiProperty({
+    name: 'phoneNumber',
+    type: 'string',
+    example: '+1234567890',
+  })
+  @IsPhoneNumber()
+  phoneNumber!: string;
+
+  @ApiProperty({
+    name: 'token',
+    type: 'string',
+    example: '222222',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @Length(6)
+  token!: string;
 }
 
 export class RegisterDto {

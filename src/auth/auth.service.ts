@@ -3,7 +3,13 @@ import { BadRequestException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, LessThan, Repository } from 'typeorm';
+import {
+  DataSource,
+  FindOptionsWhere,
+  IsNull,
+  LessThan,
+  Repository,
+} from 'typeorm';
 import { AuthConfiguration } from '../config/auth.config';
 import {
   AuthenticatedUser,
@@ -18,6 +24,7 @@ import { User, UserStatus } from '../users/entities/user.entity';
 import { PublicUserProfile, UsersService } from '../users/users.service';
 import {
   ChangePasswordDto,
+  CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
   RefreshTokenDto,
@@ -59,9 +66,10 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly notificationService: NotificationsService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  async verifyPhoneNumber(
+  async sendPhoneVerification(
     dto: VerifyPhoneNumberDto,
   ): Promise<{ message: string }> {
     const { phoneNumber } = dto;
@@ -86,6 +94,23 @@ export class AuthService {
 
     return {
       message: 'A verification code has been sent to your phone',
+    };
+  }
+
+  async completePhoneVerification(
+    dto: CompletePhoneVerificationDto,
+  ): Promise<{ message: string; isVerified: boolean }> {
+    const { phoneNumber, token } = dto;
+
+    await this.consumeVerificationToken(VerificationTokenType.Phone, token, {
+      phoneNumber,
+    });
+
+    await this.usersService.createUserWithPhoneNumber(phoneNumber);
+
+    return {
+      message: 'Phone number verified successfully',
+      isVerified: true,
     };
   }
 
@@ -126,7 +151,7 @@ export class AuthService {
     }
 
     const validPassword = await this.hashService.verify(
-      user.passwordHash,
+      user.passwordHash!,
       dto.password,
     );
     if (!validPassword) {
@@ -216,9 +241,9 @@ export class AuthService {
     dto: VerifyEmailDto,
   ): Promise<void> {
     await this.consumeVerificationToken(
-      user.id,
       VerificationTokenType.Email,
       dto.token,
+      { userId: user.id },
     );
     const entity = await this.usersService.getByUuid(user.uuid);
     await this.usersService.markEmailVerified(entity);
@@ -229,9 +254,9 @@ export class AuthService {
     dto: VerifyPhoneDto,
   ): Promise<void> {
     await this.consumeVerificationToken(
-      user.id,
       VerificationTokenType.Phone,
       dto.token,
+      { userId: user.id },
     );
     const entity = await this.usersService.getByUuid(user.uuid);
     await this.usersService.markPhoneVerified(entity);
@@ -256,9 +281,11 @@ export class AuthService {
     }
 
     await this.consumeVerificationToken(
-      user.id,
       VerificationTokenType.PasswordReset,
       dto.token,
+      {
+        userId: user.id,
+      },
     );
     user.passwordHash = await this.hashService.hash(dto.newPassword);
     await this.usersService.markLogin(user);
@@ -272,7 +299,7 @@ export class AuthService {
     }
 
     const validPassword = await this.hashService.verify(
-      user.passwordHash,
+      user.passwordHash!,
       dto.currentPassword,
     );
     if (!validPassword) {
@@ -301,7 +328,7 @@ export class AuthService {
     return {
       id: user.id,
       uuid: user.uuid,
-      email: user.email,
+      email: user.email ?? '',
       status: user.status,
       userTypes: user.userTypes,
     };
@@ -329,12 +356,12 @@ export class AuthService {
 
     const accessPayload: JwtAccessTokenPayload = {
       sub: user.uuid,
-      email: user.email,
+      email: user.email ?? '',
       typ: 'access',
     };
     const refreshPayload: JwtRefreshTokenPayload = {
       sub: user.uuid,
-      email: user.email,
+      email: user.email ?? '',
       jti: refreshTokenId,
       typ: 'refresh',
     };
@@ -422,52 +449,92 @@ export class AuthService {
 
   private async createPhoneVerificationTokenWithPhoneNumber(
     phoneNumber: string,
-    attempts: number = 5,
+    maxAttempts = 5,
   ): Promise<string> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     const token = String(Math.floor(100000 + Math.random() * 900000));
 
-    await this.verificationTokensRepository.save(
-      this.verificationTokensRepository.create({
-        tokenId: randomUUID(),
-        phoneNumber,
-        type: VerificationTokenType.Phone,
-        attempts,
-        tokenHash: await this.hashService.hash(token),
-        expiresAt: new Date(
-          Date.now() + auth.verificationTokenTtlSeconds * 1000,
-        ),
-        consumedAt: null,
-      }),
-    );
+    return this.dataSource.transaction(async (manager) => {
+      await manager.delete(VerificationToken, { phoneNumber });
 
-    return token;
+      await manager.save(
+        VerificationToken,
+        manager.create(VerificationToken, {
+          tokenId: randomUUID(),
+          phoneNumber,
+          type: VerificationTokenType.Phone,
+          attempts: 0,
+          maxAttempts,
+          tokenHash: await this.hashService.hash(token),
+          expiresAt: new Date(
+            Date.now() + auth.verificationTokenTtlSeconds * 1000,
+          ),
+          consumedAt: null,
+        }),
+      );
+
+      return token;
+    });
   }
 
   private async consumeVerificationToken(
-    userId: number,
     type: VerificationTokenType,
     tokenValue: string,
+    identification: {
+      phoneNumber?: string;
+      userId?: number;
+    },
   ): Promise<void> {
-    const tokens = await this.verificationTokensRepository.find({
-      where: { userId, type, consumedAt: IsNull() },
-      order: { createdAt: 'DESC' },
-    });
-
-    const now = new Date();
-    for (const token of tokens) {
-      if (token.expiresAt < now) {
-        continue;
-      }
-
-      if (await this.hashService.verify(token.tokenHash, tokenValue)) {
-        token.consumedAt = now;
-        await this.verificationTokensRepository.save(token);
-        return;
-      }
+    if (
+      identification.phoneNumber === undefined &&
+      identification.userId === undefined
+    ) {
+      throw new BadRequestException('Verification target is required');
     }
 
-    throw this.invalidCredentials();
+    const whereCriteria: FindOptionsWhere<VerificationToken> = {
+      type,
+    };
+
+    if (identification.phoneNumber !== undefined) {
+      whereCriteria.phoneNumber = identification.phoneNumber;
+    }
+
+    if (identification.userId !== undefined) {
+      whereCriteria.userId = identification.userId;
+    }
+
+    const token = await this.verificationTokensRepository.findOne({
+      where: whereCriteria,
+    });
+
+    if (token === null) {
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    const now = new Date();
+
+    if (token.expiresAt < now) {
+      throw new BadRequestException('OTP has expired');
+    }
+
+    if (token.attempts >= token.maxAttempts) {
+      throw new BadRequestException('OTP attempts exceeded');
+    }
+
+    const tokenMatches = await this.hashService.verify(
+      token.tokenHash,
+      tokenValue,
+    );
+
+    if (!tokenMatches) {
+      token.attempts += 1;
+      await this.verificationTokensRepository.save(token);
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    token.consumedAt = now;
+    await this.verificationTokensRepository.save(token);
   }
 
   private async getRefreshTokenId(refreshToken: string): Promise<string> {

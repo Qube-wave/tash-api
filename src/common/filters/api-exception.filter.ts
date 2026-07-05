@@ -21,6 +21,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function mapHttpStatusToErrorCode(status: number): ErrorCode {
+  switch (status) {
+    case HttpStatus.BAD_REQUEST:
+      return ErrorCode.BadRequest;
+    case HttpStatus.NOT_FOUND:
+      return ErrorCode.NotFound;
+    default:
+      return ErrorCode.InternalServerError;
+  }
+}
+
 function normalizeHttpException(exception: HttpException): NormalizedError {
   const response = exception.getResponse();
 
@@ -44,10 +55,7 @@ function normalizeHttpException(exception: HttpException): NormalizedError {
   }
 
   return {
-    code:
-      exception.getStatus() === 404
-        ? ErrorCode.NotFound
-        : ErrorCode.InternalServerError,
+    code: mapHttpStatusToErrorCode(exception.getStatus()),
     message: typeof response === 'string' ? response : exception.message,
     details: null,
   };

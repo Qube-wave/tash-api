@@ -37,7 +37,7 @@ export interface ProviderBvnVerification {
 
 export interface InitializeCardRegistrationInput {
   userUuid: string;
-  email: string;
+  email: string | null;
 }
 
 export interface ProviderCardRegistrationSession {

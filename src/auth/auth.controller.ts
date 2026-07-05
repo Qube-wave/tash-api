@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
   ChangePasswordDto,
+  CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
   RefreshTokenDto,
@@ -21,11 +22,16 @@ import { AuthResponse, AuthService, AuthTokens } from './auth.service';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  @Post('verify-phone')
-  verifyPhoneNumber(
+  @Post('send-phone-verification')
+  sendPhoneVerification(
     @Body() dto: VerifyPhoneNumberDto,
   ): Promise<{ message: string }> {
-    return this.authService.verifyPhoneNumber(dto);
+    return this.authService.sendPhoneVerification(dto);
+  }
+
+  @Post('complete-phone-verification')
+  completePhoneVerification(@Body() dto: CompletePhoneVerificationDto) {
+    return this.authService.completePhoneVerification(dto);
   }
 
   @Post('register')

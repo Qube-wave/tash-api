@@ -8,6 +8,7 @@ export interface AppConfiguration {
   apiPrefix: string;
   corsOrigins: string[];
   skipExternalConnections: boolean;
+  maxOtpAttempts: number;
 }
 
 export default registerAs('app', (): AppConfiguration => ({
@@ -23,4 +24,5 @@ export default registerAs('app', (): AppConfiguration => ({
   skipExternalConnections:
     process.env.SKIP_EXTERNAL_CONNECTIONS === 'true' ||
     process.env.NODE_ENV === 'test',
+  maxOtpAttempts: Number(process.env.MAX_OTP_ATTEMPTS ?? 5),
 }));

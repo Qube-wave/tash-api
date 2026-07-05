@@ -1,4 +1,9 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { ApiExceptionFilter } from './api-exception.filter';
 
 describe('ApiExceptionFilter', () => {
@@ -30,6 +35,40 @@ describe('ApiExceptionFilter', () => {
       error: {
         code: 'NOT_FOUND',
         message: 'Missing',
+        details: null,
+      },
+      requestId: 'req_test',
+    });
+  });
+
+  it('maps generic bad request exceptions to BAD_REQUEST', () => {
+    const status = jest.fn().mockReturnThis();
+    const json = jest.fn();
+    const host = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          requestId: 'req_test',
+          method: 'POST',
+          originalUrl: '/auth/phone/verify',
+        }),
+        getResponse: () => ({
+          status,
+          json,
+        }),
+      }),
+    } as ArgumentsHost;
+
+    new ApiExceptionFilter().catch(
+      new BadRequestException('Invalid OTP'),
+      host,
+    );
+
+    expect(status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    expect(json).toHaveBeenCalledWith({
+      success: false,
+      error: {
+        code: 'BAD_REQUEST',
+        message: 'Invalid OTP',
         details: null,
       },
       requestId: 'req_test',

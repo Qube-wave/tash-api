@@ -37,6 +37,7 @@ export enum ErrorCode {
   ProviderUnavailable = 'PROVIDER_UNAVAILABLE',
   RateLimitExceeded = 'RATE_LIMIT_EXCEEDED',
   ValidationFailed = 'VALIDATION_FAILED',
+  BadRequest = 'BAD_REQUEST',
   NotFound = 'NOT_FOUND',
   InternalServerError = 'INTERNAL_SERVER_ERROR',
 }

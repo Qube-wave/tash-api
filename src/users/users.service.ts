@@ -46,12 +46,31 @@ export class UsersService {
     private readonly profilesRepository: Repository<UserProfile>,
   ) {}
 
+  async createUserWithPhoneNumber(phoneNumber: string) {
+    await this.ensureUniqueIdentity({ phoneNumber });
+
+    const now = new Date();
+
+    const user = this.usersRepository.create({
+      status: UserStatus.PendingRegistration,
+      phoneNumber,
+      phoneVerifiedAt: now,
+      userTypes: [UserType.Consumer],
+      emailVerifiedAt: null,
+      lastLoginAt: null,
+    });
+
+    const savedUser = await this.usersRepository.save(user);
+
+    return savedUser;
+  }
+
   async createUser(input: CreateUserInput): Promise<User> {
     const email = input.email.trim().toLowerCase();
     const phoneNumber = input.phoneNumber.trim();
     const paymentTag = assertValidPaymentTag(input.paymentTag);
 
-    await this.ensureUniqueIdentity(email, phoneNumber, paymentTag);
+    await this.ensureUniqueIdentity({ email, phoneNumber, paymentTag });
 
     const user = this.usersRepository.create({
       email,
@@ -198,7 +217,7 @@ export class UsersService {
 
     return {
       uuid: user.uuid,
-      paymentTag: user.paymentTag,
+      paymentTag: user.paymentTag ?? '',
       firstName: user.profile.firstName,
       lastName: user.profile.lastName,
     };
@@ -228,18 +247,40 @@ export class UsersService {
     return this.activateIfVerified(user);
   }
 
-  private async ensureUniqueIdentity(
-    email: string,
-    phoneNumber: string,
-    paymentTag: string,
-  ): Promise<void> {
+  private async ensureUniqueIdentity({
+    email,
+    phoneNumber,
+    paymentTag,
+  }: {
+    email?: string;
+    phoneNumber?: string;
+    paymentTag?: string;
+  }): Promise<void> {
+    const whereCriteria = [];
+    let errorFields = '';
+
+    if (email !== undefined) {
+      whereCriteria.push({ email });
+      errorFields += 'email,';
+    }
+
+    if (phoneNumber !== undefined) {
+      whereCriteria.push({ phoneNumber });
+      errorFields += 'phone number,';
+    }
+
+    if (paymentTag !== undefined) {
+      whereCriteria.push({ paymentTag });
+      errorFields += 'payment tag';
+    }
+
     const existing = await this.usersRepository.findOne({
-      where: [{ email }, { phoneNumber }, { paymentTag }],
+      where: whereCriteria,
     });
 
     if (existing !== null) {
       throw new ConflictException(
-        'A user with this email, phone number, or payment tag already exists.',
+        `A user with this ${errorFields} already exists.`,
       );
     }
   }
@@ -247,9 +288,9 @@ export class UsersService {
   private toPublicProfile(user: User): PublicUserProfile {
     return {
       uuid: user.uuid,
-      email: user.email,
+      email: user.email ?? '',
       phoneNumber: user.phoneNumber,
-      paymentTag: user.paymentTag,
+      paymentTag: user.paymentTag ?? '',
       status: user.status,
       userTypes: user.userTypes,
       profile:
