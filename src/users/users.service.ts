@@ -4,8 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, Repository } from 'typeorm';
-import { UpdateProfileDto } from './dto/update-profile.dto';
+import { Repository } from 'typeorm';
 import { UserProfile } from './entities/user-profile.entity';
 import { User, UserStatus, UserType } from './entities/user.entity';
 import {
@@ -175,36 +174,6 @@ export class UsersService {
     return this.toPublicProfile(user);
   }
 
-  async updateProfile(
-    uuid: string,
-    dto: UpdateProfileDto,
-  ): Promise<PublicUserProfile> {
-    const user = await this.usersRepository.findOne({
-      where: { uuid },
-      relations: { profile: true },
-    });
-
-    if (user === null) {
-      throw new NotFoundException('User was not found.');
-    }
-
-    const profile = user.profile;
-    if (profile === undefined) {
-      throw new NotFoundException('User profile was not found.');
-    }
-
-    if (dto.firstName !== undefined) profile.firstName = dto.firstName.trim();
-    if (dto.lastName !== undefined) profile.lastName = dto.lastName.trim();
-    if (dto.dateOfBirth !== undefined) profile.dateOfBirth = dto.dateOfBirth;
-    if (dto.country !== undefined) profile.country = dto.country.toUpperCase();
-    if (dto.defaultCurrency !== undefined) {
-      profile.defaultCurrency = dto.defaultCurrency.toUpperCase();
-    }
-
-    await this.profilesRepository.save(profile);
-    return this.getPublicProfile(uuid);
-  }
-
   async completeRegistrationProfile(
     userId: number,
     input: CompleteRegistrationProfileInput,
@@ -304,6 +273,10 @@ export class UsersService {
     const tag = assertValidPaymentTag(paymentTag);
     const user = await this.getByUuid(uuid);
 
+    if (user.status !== UserStatus.Active) {
+      throw new ConflictException('Only active users can change payment tag.');
+    }
+
     if (user.paymentTag === tag) {
       return this.getPublicProfile(uuid);
     }
@@ -321,16 +294,10 @@ export class UsersService {
   }
 
   async resolveRecipient(recipient: string): Promise<ResolvedRecipient> {
-    const normalized = recipient.trim();
-    const tag = normalizePaymentTag(normalized);
-    const where: FindOptionsWhere<User>[] = [
-      { paymentTag: tag },
-      { email: normalized.toLowerCase() },
-      { phoneNumber: normalized },
-    ];
+    const tag = normalizePaymentTag(recipient);
 
     const user = await this.usersRepository.findOne({
-      where,
+      where: { paymentTag: tag },
       relations: { profile: true },
     });
 
