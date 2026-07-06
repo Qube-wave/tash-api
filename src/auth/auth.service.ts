@@ -32,7 +32,6 @@ import {
   ForgotPasswordDto,
   LoginDto,
   RefreshTokenDto,
-  RegisterDto,
   ResetPasswordDto,
   VerifyEmailDto,
   VerifyEmailTokenDto,
@@ -256,25 +255,6 @@ export class AuthService {
 
     return this.buildAuthResponse(user);
   }
-
-  // async register(dto: RegisterDto): Promise<AuthResponse> {
-  //   const user = await this.usersService.createUser({
-  //     email: dto.email,
-  //     phoneNumber: dto.phoneNumber,
-  //     paymentTag: dto.paymentTag,
-  //     passwordHash: await this.hashService.hash(dto.password),
-  //     firstName: dto.firstName,
-  //     lastName: dto.lastName,
-  //     dateOfBirth: dto.dateOfBirth,
-  //     country: dto.country,
-  //     defaultCurrency: dto.defaultCurrency,
-  //   });
-  //   await this.settingsService.createDefaults(user.id);
-  //   await this.createVerificationToken(user.id, VerificationTokenType.Email);
-  //   await this.createPhoneVerificationToken(user.id);
-
-  //   return this.buildAuthResponse(user);
-  // }
 
   async login(dto: LoginDto): Promise<AuthResponse> {
     const user = await this.usersService.findByEmail(dto.email);
@@ -716,36 +696,6 @@ export class AuthService {
     token.consumedAt = now;
     await this.verificationTokensRepository.save(token);
   }
-
-  // private async createRegistrationSession(
-  //   userId: string,
-  //   maxAttempts = 5,
-  // ): Promise<string> {
-  //   const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
-  //   const token = String(Math.floor(100000 + Math.random() * 900000));
-
-  //   return this.dataSource.transaction(async (manager) => {
-  //     await manager.delete(VerificationToken, { email });
-
-  //     await manager.save(
-  //       VerificationToken,
-  //       manager.create(VerificationToken, {
-  //         tokenId: randomUUID(),
-  //         email,
-  //         type: VerificationTokenType.Email,
-  //         attempts: 0,
-  //         maxAttempts,
-  //         tokenHash: await this.hashService.hash(token),
-  //         expiresAt: new Date(
-  //           Date.now() + auth.verificationTokenTtlSeconds * 1000,
-  //         ),
-  //         consumedAt: null,
-  //       }),
-  //     );
-
-  //     return token;
-  //   });
-  // }
 
   private assertCanStartOrResumeRegistration(
     user: User | null,

@@ -2,13 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
   IsEmail,
-  // IsISO31661Alpha2,
-  // IsISO4217CurrencyCode,
   IsNotEmpty,
-  IsOptional,
   IsPhoneNumber,
   IsString,
-  IsStrongPassword,
   Length,
   Matches,
   MaxLength,
@@ -162,89 +158,6 @@ export class CompleteOnboardingPinDto {
   @IsString()
   @Length(4, 4)
   pin!: string;
-}
-
-export class RegisterDto {
-  @ApiProperty({
-    name: 'email',
-    type: 'string',
-    example: 'john@example.com',
-  })
-  @IsOptional()
-  @IsEmail()
-  email?: string;
-
-  @ApiProperty({
-    name: 'phoneNumber',
-    type: 'string',
-    example: '+1234567890',
-  })
-  @IsOptional()
-  @IsPhoneNumber()
-  phoneNumber?: string;
-
-  @ApiProperty({
-    name: 'password',
-    type: 'string',
-    example: 'password123',
-  })
-  @IsString()
-  @IsStrongPassword({ minLength: 8 })
-  password!: string;
-
-  // @ApiProperty({
-  //   name: 'User payment tag',
-  //   type: 'string',
-  //   example: 'johndoe',
-  // })
-  // @IsString()
-  // @MinLength(3)
-  // @MaxLength(31)
-  // paymentTag!: string;
-
-  @ApiProperty({
-    name: 'firstName',
-    type: 'string',
-    example: 'John',
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  firstName!: string;
-
-  @ApiProperty({
-    name: 'lastName',
-    type: 'string',
-    example: 'Doe',
-  })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(100)
-  lastName!: string;
-
-  @ApiProperty({
-    name: 'dateOfBirth',
-    type: 'string',
-    example: '1990-01-01',
-  })
-  @IsDateString()
-  dateOfBirth!: string;
-
-  // @ApiProperty({
-  //   name: 'country',
-  //   type: 'string',
-  //   example: 'NG',
-  // })
-  // @IsISO31661Alpha2()
-  // country!: string;
-
-  // @ApiProperty({
-  //   name: 'defaultCurrency',
-  //   type: 'string',
-  //   example: 'NGN',
-  // })
-  // @IsISO4217CurrencyCode()
-  // defaultCurrency!: string;
 }
 
 export class LoginDto {

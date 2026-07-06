@@ -129,7 +129,7 @@ export function validateEnvironment(
     );
   }
 
-  const baseUrl = readString(config, 'BASE_URL', '');
+  const baseUrl = readString(config, 'BASE_URL', 'http://localhost:3000');
 
   const accessTokenSecret = readString(
     config,

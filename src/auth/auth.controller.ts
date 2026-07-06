@@ -13,7 +13,6 @@ import {
   ForgotPasswordDto,
   LoginDto,
   RefreshTokenDto,
-  RegisterDto,
   ResetPasswordDto,
   VerifyEmailDto,
   VerifyEmailTokenDto,
@@ -79,11 +78,6 @@ export class AuthController {
   ): Promise<AuthResponse> {
     return this.authService.completeOnboardingPin(dto);
   }
-
-  // @Post('register')
-  // register(@Body() dto: RegisterDto): Promise<AuthResponse> {
-  //   return this.authService.register(dto);
-  // }
 
   @Post('login')
   login(@Body() dto: LoginDto): Promise<AuthResponse> {
