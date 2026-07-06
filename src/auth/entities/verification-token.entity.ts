@@ -27,6 +27,10 @@ export class VerificationToken {
 
   @Index()
   @Column({ type: 'varchar', nullable: true })
+  email?: string | null;
+
+  @Index()
+  @Column({ type: 'varchar', nullable: true })
   phoneNumber?: string | null;
 
   @Column({ type: 'enum', enum: VerificationTokenType })

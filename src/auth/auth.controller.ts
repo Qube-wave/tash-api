@@ -12,6 +12,7 @@ import {
   RegisterDto,
   ResetPasswordDto,
   VerifyEmailDto,
+  VerifyEmailTokenDto,
   VerifyPhoneDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
@@ -34,10 +35,15 @@ export class AuthController {
     return this.authService.completePhoneVerification(dto);
   }
 
-  @Post('register')
-  register(@Body() dto: RegisterDto): Promise<AuthResponse> {
-    return this.authService.register(dto);
+  @Post('send-email-verification')
+  sendEmailVerification(@Body() dto: VerifyEmailDto) {
+    return this.authService.sendEmailVerification(dto);
   }
+
+  // @Post('register')
+  // register(@Body() dto: RegisterDto): Promise<AuthResponse> {
+  //   return this.authService.register(dto);
+  // }
 
   @Post('login')
   login(@Body() dto: LoginDto): Promise<AuthResponse> {
@@ -75,7 +81,7 @@ export class AuthController {
   @Post('email/verify')
   async verifyEmail(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: VerifyEmailDto,
+    @Body() dto: VerifyEmailTokenDto,
   ): Promise<{ verified: true }> {
     await this.authService.verifyEmail(user, dto);
     return { verified: true };

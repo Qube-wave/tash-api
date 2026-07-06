@@ -1,6 +1,7 @@
 export type NodeEnvironment = 'development' | 'test' | 'production';
 
 export interface EnvironmentVariables {
+  BASE_URL: string;
   NODE_ENV: NodeEnvironment;
   PORT: number;
   APP_NAME: string;
@@ -24,15 +25,13 @@ export interface EnvironmentVariables {
   TRANSACTION_PIN_MAX_ATTEMPTS: number;
   TRANSACTION_PIN_LOCK_MINUTES: number;
   PAYMENT_PROVIDER: 'mock' | 'nomba';
-  TERMII_API_KEY: string;
-  TERMII_BASE_URL: string;
-  SENDCHAMP_API_KEY: string;
-  SENDCHAMP_BASE_URL: string;
   AFRICAS_TALKING_API_KEY: string;
   AFRICAS_TALKING_BASE_URL: string;
   AFRICAS_TALKING_SENDER_ID: string;
   AFRICAS_TALKING_USERNAME: string;
   SKIP_EXTERNAL_CONNECTIONS: boolean;
+  RESEND_API_KEY: string;
+  RESEND_FROM_EMAIL: string;
 }
 
 const VALID_NODE_ENVIRONMENTS: readonly NodeEnvironment[] = [
@@ -130,6 +129,8 @@ export function validateEnvironment(
     );
   }
 
+  const baseUrl = readString(config, 'BASE_URL', '');
+
   const accessTokenSecret = readString(
     config,
     'JWT_ACCESS_TOKEN_SECRET',
@@ -144,18 +145,6 @@ export function validateEnvironment(
     config,
     'BVN_ENCRYPTION_KEY',
     'local-development-bvn-key-change-me',
-  );
-  const termiiApiKey = readString(config, 'TERMII_API_KEY', '');
-  const termiiBaseUrl = readString(
-    config,
-    'TERMII_BASE_URL',
-    'https://api.ng.termii.com',
-  );
-  const sendchampApiKey = readString(config, 'SENDCHAMP_API_KEY', '');
-  const sendchampBaseUrl = readString(
-    config,
-    'SENDCHAMP_BASE_URL',
-    'https://api.sendchamp.com/api/v1',
   );
   const africasTalkingApiKey = readString(
     config,
@@ -178,10 +167,12 @@ export function validateEnvironment(
     '',
   );
 
+  const resendApiKey = readString(config, 'RESEND_API_KEY', '');
+  const resendFromEmail = readString(config, 'RESEND_FROM_EMAIL', '');
+
   for (const [key, value] of [
-    ['TERMII_BASE_URL', termiiBaseUrl],
-    ['SENDCHAMP_BASE_URL', sendchampBaseUrl],
     ['AFRICAS_TALKING_BASE_URL', africasTalkingBaseUrl],
+    ['BASE_URL', baseUrl],
   ] as const) {
     try {
       new URL(value);
@@ -201,12 +192,8 @@ export function validateEnvironment(
       }
     }
 
-    if (termiiApiKey === '' || termiiApiKey === 'termii-api-key') {
-      throw new Error('TERMII_API_KEY must be configured for production');
-    }
-
-    if (sendchampApiKey === '' || sendchampApiKey === 'sendchamp-api-key') {
-      throw new Error('SENDCHAMP_API_KEY must be configured for production');
+    if (resendApiKey === '' || resendApiKey === 'resend-api-key') {
+      throw new Error('RESEND_API_KEY must be configured for production');
     }
 
     if (
@@ -226,6 +213,7 @@ export function validateEnvironment(
   }
 
   return {
+    BASE_URL: baseUrl,
     NODE_ENV: environment,
     PORT: readNumber(config, 'PORT', 3000),
     APP_NAME: readString(config, 'APP_NAME', 'tash-api'),
@@ -273,10 +261,6 @@ export function validateEnvironment(
       15,
     ),
     PAYMENT_PROVIDER: paymentProvider as PaymentProvider,
-    TERMII_API_KEY: termiiApiKey,
-    TERMII_BASE_URL: termiiBaseUrl,
-    SENDCHAMP_API_KEY: sendchampApiKey,
-    SENDCHAMP_BASE_URL: sendchampBaseUrl,
     AFRICAS_TALKING_API_KEY: africasTalkingApiKey,
     AFRICAS_TALKING_BASE_URL: africasTalkingBaseUrl,
     AFRICAS_TALKING_SENDER_ID: africasTalkingSenderId,
@@ -286,5 +270,7 @@ export function validateEnvironment(
       'SKIP_EXTERNAL_CONNECTIONS',
       environment === 'test',
     ),
+    RESEND_API_KEY: resendApiKey,
+    RESEND_FROM_EMAIL: resendFromEmail,
   };
 }

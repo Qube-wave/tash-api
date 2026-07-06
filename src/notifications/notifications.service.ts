@@ -5,15 +5,19 @@ import { Queue, UnrecoverableError } from 'bullmq';
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import { NotificationsConfiguration } from 'src/config/notifications.config';
 import { NOTIFICATION_QUEUE } from 'src/jobs/job-names';
-import { OtpSmsNotificationData } from './notifications.interface';
+import { ISendEmail, OtpNotificationData } from './notifications.interface';
+import { Resend } from 'resend';
+import { emailOtpTemplate } from './email.templates';
 
 @Injectable()
 export class NotificationsService {
-  private readonly termiiClient: AxiosInstance;
-  private readonly sendchampClient: AxiosInstance;
   private readonly africasTalkingClient: AxiosInstance;
+  private readonly resend: Resend;
+
   private readonly notificationsConfig: NotificationsConfiguration;
   private readonly logger = new Logger(NotificationsService.name);
+
+  private readonly emailFrom: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -25,21 +29,6 @@ export class NotificationsService {
         'notifications',
       );
 
-    this.termiiClient = axios.create({
-      baseURL: this.notificationsConfig.termiiBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    this.sendchampClient = axios.create({
-      baseURL: this.notificationsConfig.sendchampBaseUrl,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.notificationsConfig.sendchampApiKey}`,
-      },
-    });
-
     this.africasTalkingClient = axios.create({
       baseURL: this.notificationsConfig.africasTalkingBaseUrl,
       headers: {
@@ -48,9 +37,12 @@ export class NotificationsService {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
     });
+
+    this.resend = new Resend(this.notificationsConfig.resendApiKey);
+    this.emailFrom = this.notificationsConfig.resendFromEmail;
   }
 
-  async enqueuOtpSmsNotification(data: OtpSmsNotificationData): Promise<void> {
+  async enqueuOtpSmsNotification(data: OtpNotificationData): Promise<void> {
     try {
       await this.notificationQueue.add('send-sms-otp', data);
     } catch (error: unknown) {
@@ -62,37 +54,9 @@ export class NotificationsService {
     }
   }
 
-  async sendOtpSmsNotification(data: OtpSmsNotificationData): Promise<void> {
+  async sendOtpSmsNotification(data: OtpNotificationData): Promise<void> {
     try {
-      // await this.termiiClient.post('/api/sms/otp/send', {
-      //   api_key: this.notificationsConfig.termiiApiKey,
-      //   message_type: 'NUMERIC',
-      //   to: data.phoneNumber,
-      //   from: 'Tash',
-      //   channel: 'dnd',
-      //   pin_attempts: data.attempts,
-      //   pin_time_to_live: data.ttl,
-      //   pin_length: data.length,
-      //   pin_placeholder: `< 123456 >`,
-      //   message_text: `Your phone verification code is < 123456 > \n      // Do not share this code with anyone`,
-      //   pin_type: 'NUMERIC',
-      // });
-      // await this.sendchampClient.post('/verification/create', {
-      //   channel: 'sms',
-      //   sender: 'Tash',
-      //   token_type: 'numeric',
-      //   token_length: data.length,
-      //   expiration_time: data.ttl,
-      //   customer_mobile_number: data.phoneNumber.replace(/^\+/, ''),
-      //   meta_data: {
-      //     token: data.otp,
-      //   },
-      //   token: data.otp,
-      // });
-      //
-      //
-
-      const to = this.normalizePhoneNumberForAfricasTalking(data.phoneNumber);
+      const to = this.normalizePhoneNumberForAfricasTalking(data.phoneNumber!);
 
       const message = `Your Tash verification code is ${data.otp}. Do not share this code with anyone. This code is only valid for 15 minutes and 5 attempts`;
 
@@ -139,6 +103,64 @@ export class NotificationsService {
     }
   }
 
+  async enqueueOtpEmailNotification(data: OtpNotificationData): Promise<void> {
+    try {
+      await this.notificationQueue.add('send-email-otp', data);
+    } catch (error: unknown) {
+      this.logger.error('Could not enqueue email otp', {
+        error: this.serializeError(error),
+        metadata: this.redactNotificationData(data),
+      });
+      throw error;
+    }
+  }
+
+  async sendOtpEmailNotification(data: OtpNotificationData): Promise<void> {
+    try {
+      const formattedOtp =
+        data.otp.length === 6
+          ? `${data.otp.slice(0, 3)}-${data.otp.slice(3)}`
+          : data.otp;
+
+      const emailHtml = emailOtpTemplate({
+        otp: formattedOtp,
+        expiresIn: String(data.ttl),
+        maxAttempts: String(data.attempts),
+        year: String(new Date().getFullYear()),
+      });
+
+      await this.sendEmail({
+        from: this.emailFrom,
+        to: data.email!,
+        subject: 'Your Tash Verification code',
+        html: emailHtml,
+      });
+    } catch (error: unknown) {
+      this.logger.error('An error occurred while sending OTP', {
+        error,
+        metadata: this.redactNotificationData(data),
+      });
+
+      throw error;
+    }
+  }
+
+  private async sendEmail(body: ISendEmail) {
+    const { error } = await this.resend.emails.send({
+      from: body.from,
+      to: body.to,
+      subject: body.subject,
+      html: body.html,
+    });
+
+    if (error) {
+      this.logger.error(
+        `Error sending email to ${body.to} with subject: ${body.subject}`,
+        error,
+      );
+    }
+  }
+
   private normalizePhoneNumberForAfricasTalking(phoneNumber: string): string {
     let cleaned = phoneNumber.trim().replace(/\s+/g, '');
 
@@ -168,8 +190,8 @@ export class NotificationsService {
   }
 
   private redactNotificationData(
-    data: OtpSmsNotificationData,
-  ): Omit<OtpSmsNotificationData, 'otp'> & { otp: string } {
+    data: OtpNotificationData,
+  ): Omit<OtpNotificationData, 'otp'> & { otp: string } {
     return {
       ...data,
       otp: '[redacted]',

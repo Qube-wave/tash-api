@@ -22,14 +22,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function mapHttpStatusToErrorCode(status: number): ErrorCode {
-  switch (status) {
-    case HttpStatus.BAD_REQUEST:
-      return ErrorCode.BadRequest;
-    case HttpStatus.NOT_FOUND:
-      return ErrorCode.NotFound;
-    default:
-      return ErrorCode.InternalServerError;
+  if (status === 400) {
+    return ErrorCode.BadRequest;
   }
+
+  if (status === 404) {
+    return ErrorCode.NotFound;
+  }
+
+  return ErrorCode.InternalServerError;
 }
 
 function normalizeHttpException(exception: HttpException): NormalizedError {

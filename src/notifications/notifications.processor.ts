@@ -2,10 +2,11 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { NOTIFICATION_QUEUE } from 'src/jobs/job-names';
-import { OtpSmsNotificationData } from './notifications.interface';
+import { OtpNotificationData } from './notifications.interface';
 import { NotificationsService } from './notifications.service';
 
 const SEND_SMS_OTP_JOB = 'send-sms-otp';
+const SEND_EMAIL_OTP_JOB = 'send-email-otp';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -13,7 +14,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isOtpSmsNotificationData(
   value: unknown,
-): value is OtpSmsNotificationData {
+): value is OtpNotificationData {
   return (
     isRecord(value) &&
     typeof value.phoneNumber === 'string' &&
@@ -33,15 +34,19 @@ export class NotificationsProcessor extends WorkerHost {
   }
 
   async process(job: Job<unknown, void, string>): Promise<void> {
-    if (job.name !== SEND_SMS_OTP_JOB) {
-      throw new Error(`Unsupported notification job: ${job.name}`);
-    }
+    if ((job.name = SEND_SMS_OTP_JOB)) {
+      if (!isOtpSmsNotificationData(job.data)) {
+        throw new Error(`Invalid notification job payload: ${job.name}`);
+      }
 
-    if (!isOtpSmsNotificationData(job.data)) {
-      throw new Error(`Invalid notification job payload: ${job.name}`);
-    }
+      await this.notificationService.sendOtpSmsNotification(job.data);
+    } else if (job.name === SEND_EMAIL_OTP_JOB) {
+      if (!isOtpSmsNotificationData(job.data)) {
+        throw new Error(`Invalid notification job payload: ${job.name}`);
+      }
 
-    await this.notificationService.sendOtpSmsNotification(job.data);
+      await this.notificationService.sendOtpEmailNotification(job.data);
+    }
   }
 
   @OnWorkerEvent('completed')

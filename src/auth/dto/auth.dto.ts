@@ -2,11 +2,12 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
   IsEmail,
-  IsISO31661Alpha2,
-  IsISO4217CurrencyCode,
+  // IsISO31661Alpha2,
+  // IsISO4217CurrencyCode,
   IsNotEmpty,
   IsPhoneNumber,
   IsString,
+  IsStrongPassword,
   Length,
   Matches,
   MaxLength,
@@ -30,6 +31,7 @@ export class CompletePhoneVerificationDto {
     type: 'string',
     example: '+1234567890',
   })
+  @IsNotEmpty()
   @IsPhoneNumber()
   phoneNumber!: string;
 
@@ -44,17 +46,49 @@ export class CompletePhoneVerificationDto {
   token!: string;
 }
 
-export class RegisterDto {
+export class VerifyEmailDto {
   @ApiProperty({
     name: 'User email',
     type: 'string',
     example: 'john@example.com',
   })
+  @IsNotEmpty()
+  @IsEmail()
+  email!: string;
+}
+
+export class CompleteEmailVerificationDto {
+  @ApiProperty({
+    name: 'email',
+    type: 'string',
+    example: 'johndoe@mail.com',
+  })
+  @IsNotEmpty()
   @IsEmail()
   email!: string;
 
   @ApiProperty({
-    name: 'User phone number',
+    name: 'token',
+    type: 'string',
+    example: '222222',
+  })
+  @IsNotEmpty()
+  @IsString()
+  @Length(6)
+  token!: string;
+}
+
+export class RegisterDto {
+  // @ApiProperty({
+  //   name: 'User email',
+  //   type: 'string',
+  //   example: 'john@example.com',
+  // })
+  // @IsEmail()
+  // email!: string;
+
+  @ApiProperty({
+    name: 'phoneNumber',
     type: 'string',
     example: '+1234567890',
   })
@@ -62,27 +96,26 @@ export class RegisterDto {
   phoneNumber!: string;
 
   @ApiProperty({
-    name: 'User password',
+    name: 'password',
     type: 'string',
     example: 'password123',
   })
   @IsString()
-  @MinLength(8)
-  @MaxLength(128)
+  @IsStrongPassword({ minLength: 8 })
   password!: string;
 
-  @ApiProperty({
-    name: 'User payment tag',
-    type: 'string',
-    example: 'johndoe',
-  })
-  @IsString()
-  @MinLength(3)
-  @MaxLength(31)
-  paymentTag!: string;
+  // @ApiProperty({
+  //   name: 'User payment tag',
+  //   type: 'string',
+  //   example: 'johndoe',
+  // })
+  // @IsString()
+  // @MinLength(3)
+  // @MaxLength(31)
+  // paymentTag!: string;
 
   @ApiProperty({
-    name: 'User first name',
+    name: 'firstName',
     type: 'string',
     example: 'John',
   })
@@ -92,7 +125,7 @@ export class RegisterDto {
   firstName!: string;
 
   @ApiProperty({
-    name: 'User last name',
+    name: 'lastName',
     type: 'string',
     example: 'Doe',
   })
@@ -102,28 +135,28 @@ export class RegisterDto {
   lastName!: string;
 
   @ApiProperty({
-    name: 'User date of birth',
+    name: 'dateOfBirth',
     type: 'string',
     example: '1990-01-01',
   })
   @IsDateString()
   dateOfBirth!: string;
 
-  @ApiProperty({
-    name: 'User country',
-    type: 'string',
-    example: 'US',
-  })
-  @IsISO31661Alpha2()
-  country!: string;
+  // @ApiProperty({
+  //   name: 'country',
+  //   type: 'string',
+  //   example: 'NG',
+  // })
+  // @IsISO31661Alpha2()
+  // country!: string;
 
-  @ApiProperty({
-    name: 'User default currency',
-    type: 'string',
-    example: 'USD',
-  })
-  @IsISO4217CurrencyCode()
-  defaultCurrency!: string;
+  // @ApiProperty({
+  //   name: 'defaultCurrency',
+  //   type: 'string',
+  //   example: 'NGN',
+  // })
+  // @IsISO4217CurrencyCode()
+  // defaultCurrency!: string;
 }
 
 export class LoginDto {
@@ -167,7 +200,7 @@ export class ChangePasswordDto {
   newPassword!: string;
 }
 
-export class VerifyEmailDto {
+export class VerifyEmailTokenDto {
   @IsString()
   token!: string;
 }

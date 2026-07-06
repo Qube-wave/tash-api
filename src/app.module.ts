@@ -29,6 +29,8 @@ import { UsersModule } from './users/users.module';
 import { VirtualAccountsModule } from './virtual-accounts/virtual-accounts.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { ServeStaticModule } from '@nestjs/serve-static';
+import { join } from 'path';
 
 function externalConnectionsEnabled(): boolean {
   return (
@@ -99,6 +101,9 @@ const featureImports = externalConnectionsEnabled()
       isGlobal: true,
       load: configuration,
       validate: validateEnvironment,
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'),
     }),
     ...externalImports,
     CommonModule,
