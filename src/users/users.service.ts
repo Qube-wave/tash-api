@@ -386,25 +386,6 @@ export class UsersService {
     await this.usersRepository.save(user);
   }
 
-  async activateIfVerified(user: User): Promise<User> {
-    if (user.emailVerifiedAt !== null && user.phoneVerifiedAt !== null) {
-      user.status = UserStatus.Active;
-      return this.usersRepository.save(user);
-    }
-
-    return user;
-  }
-
-  async markEmailVerified(user: User): Promise<User> {
-    user.emailVerifiedAt = new Date();
-    return this.activateIfVerified(user);
-  }
-
-  async markPhoneVerified(user: User): Promise<User> {
-    user.phoneVerifiedAt = new Date();
-    return this.activateIfVerified(user);
-  }
-
   private async ensureUniqueIdentity({
     email,
     phoneNumber,

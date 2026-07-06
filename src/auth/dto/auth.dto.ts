@@ -6,7 +6,6 @@ import {
   IsPhoneNumber,
   IsString,
   Length,
-  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -163,17 +162,6 @@ export class CompleteOnboardingPinDto {
 export class RefreshTokenDto {
   @IsString()
   refreshToken!: string;
-}
-
-export class VerifyEmailTokenDto {
-  @IsString()
-  token!: string;
-}
-
-export class VerifyPhoneDto {
-  @IsString()
-  @Matches(/^\d{4,8}$/)
-  token!: string;
 }
 
 export class CreateTransactionPinDuringAuthDto {

@@ -30,8 +30,6 @@ import {
   CompletePhoneVerificationDto,
   RefreshTokenDto,
   VerifyEmailDto,
-  VerifyEmailTokenDto,
-  VerifyPhoneDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -407,32 +405,6 @@ export class AuthService {
     await this.refreshTokensRepository.save(activeTokens);
   }
 
-  async verifyEmail(
-    user: AuthenticatedUser,
-    dto: VerifyEmailTokenDto,
-  ): Promise<void> {
-    await this.consumeVerificationToken(
-      VerificationTokenType.Email,
-      dto.token,
-      { userId: user.id },
-    );
-    const entity = await this.usersService.getByUuid(user.uuid);
-    await this.usersService.markEmailVerified(entity);
-  }
-
-  async verifyPhone(
-    user: AuthenticatedUser,
-    dto: VerifyPhoneDto,
-  ): Promise<void> {
-    await this.consumeVerificationToken(
-      VerificationTokenType.Phone,
-      dto.token,
-      { userId: user.id },
-    );
-    const entity = await this.usersService.getByUuid(user.uuid);
-    await this.usersService.markPhoneVerified(entity);
-  }
-
   async validateAccessTokenUser(uuid: string): Promise<AuthenticatedUser> {
     const user = await this.usersService.getByUuid(uuid);
 
@@ -516,57 +488,6 @@ export class AuthService {
       refreshToken,
       refreshTokenExpiresIn: auth.refreshTokenTtlSeconds,
     };
-  }
-
-  private async createVerificationToken(
-    userId: number,
-    type: VerificationTokenType,
-    attempts: number = 5,
-  ): Promise<string> {
-    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
-    const token = randomBytes(32).toString('base64url');
-    const ttl =
-      type === VerificationTokenType.PasswordReset
-        ? auth.passwordResetTokenTtlSeconds
-        : auth.verificationTokenTtlSeconds;
-
-    await this.verificationTokensRepository.save(
-      this.verificationTokensRepository.create({
-        tokenId: randomUUID(),
-        userId,
-        type,
-        attempts,
-        tokenHash: await this.hashService.hash(token),
-        expiresAt: new Date(Date.now() + ttl * 1000),
-        consumedAt: null,
-      }),
-    );
-
-    return token;
-  }
-
-  private async createPhoneVerificationToken(
-    userId: number,
-    attempts: number = 5,
-  ): Promise<string> {
-    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
-    const token = String(Math.floor(100000 + Math.random() * 900000));
-
-    await this.verificationTokensRepository.save(
-      this.verificationTokensRepository.create({
-        tokenId: randomUUID(),
-        userId,
-        type: VerificationTokenType.Phone,
-        attempts,
-        tokenHash: await this.hashService.hash(token),
-        expiresAt: new Date(
-          Date.now() + auth.verificationTokenTtlSeconds * 1000,
-        ),
-        consumedAt: null,
-      }),
-    );
-
-    return token;
   }
 
   private async createPhoneVerificationTokenWithPhoneNumber(

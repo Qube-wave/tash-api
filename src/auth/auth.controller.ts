@@ -11,8 +11,6 @@ import {
   CompletePhoneVerificationDto,
   RefreshTokenDto,
   VerifyEmailDto,
-  VerifyEmailTokenDto,
-  VerifyPhoneDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
 import {
@@ -127,27 +125,5 @@ export class AuthController {
   ): Promise<{ loggedOut: true }> {
     await this.authService.logoutAll(user.id);
     return { loggedOut: true };
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('email/verify')
-  async verifyEmail(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: VerifyEmailTokenDto,
-  ): Promise<{ verified: true }> {
-    await this.authService.verifyEmail(user, dto);
-    return { verified: true };
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('phone/verify')
-  async verifyPhone(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: VerifyPhoneDto,
-  ): Promise<{ verified: true }> {
-    await this.authService.verifyPhone(user, dto);
-    return { verified: true };
   }
 }
