@@ -56,28 +56,12 @@ export class NotificationsService {
 
   async sendOtpSmsNotification(data: OtpNotificationData): Promise<void> {
     try {
-      const to = this.normalizePhoneNumberForAfricasTalking(data.phoneNumber!);
-
       const message = `Your Tash verification code is ${data.otp}. Do not share this code with anyone. This code is only valid for 15 minutes and 5 attempts`;
 
-      const body = new URLSearchParams();
-
-      body.append(
-        'username',
-        this.notificationsConfig.africasTalkingUsername.trim(),
-      );
-
-      body.append('to', to);
-      body.append('message', message);
-
-      // const senderId = this.notificationsConfig.africasTalkingSenderId?.trim();
-
-      // if (senderId) {
-      //   body.append('from', senderId);
-      // }
-
-      const response: AxiosResponse<unknown> =
-        await this.africasTalkingClient.post('/version1/messaging', body);
+      const { to, response } = await this.sendSms({
+        phoneNumber: data.phoneNumber!,
+        message,
+      });
 
       this.logger.log('OTP SMS sent successfully', {
         provider: 'africastalking',
@@ -89,15 +73,6 @@ export class NotificationsService {
         error: this.serializeError(error),
         metadata: this.redactNotificationData(data),
       });
-
-      if (
-        axios.isAxiosError(error) &&
-        (error.response?.status === 401 || error.response?.status === 407)
-      ) {
-        throw new UnrecoverableError(
-          'Notification provider rejected the configured access key.',
-        );
-      }
 
       throw error;
     }
@@ -158,6 +133,56 @@ export class NotificationsService {
         `Error sending email to ${body.to} with subject: ${body.subject}`,
         error,
       );
+    }
+  }
+
+  private async sendSms({
+    phoneNumber,
+    message,
+  }: {
+    phoneNumber: string;
+    message: string;
+  }): Promise<{
+    to: string;
+    response: AxiosResponse<unknown>;
+  }> {
+    try {
+      const to = this.normalizePhoneNumberForAfricasTalking(phoneNumber);
+
+      const body = new URLSearchParams();
+
+      body.append(
+        'username',
+        this.notificationsConfig.africasTalkingUsername.trim(),
+      );
+
+      body.append('to', to);
+      body.append('message', message);
+
+      // const senderId = this.notificationsConfig.africasTalkingSenderId?.trim();
+
+      // if (senderId) {
+      //   body.append('from', senderId);
+      // }
+
+      const response: AxiosResponse<unknown> =
+        await this.africasTalkingClient.post('/version1/messaging', body);
+
+      return {
+        to,
+        response,
+      };
+    } catch (error: unknown) {
+      if (
+        axios.isAxiosError(error) &&
+        (error.response?.status === 401 || error.response?.status === 407)
+      ) {
+        throw new UnrecoverableError(
+          'Notification provider rejected the configured access key.',
+        );
+      }
+
+      throw error;
     }
   }
 
