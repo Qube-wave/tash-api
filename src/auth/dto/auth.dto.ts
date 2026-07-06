@@ -5,6 +5,7 @@ import {
   // IsISO31661Alpha2,
   // IsISO4217CurrencyCode,
   IsNotEmpty,
+  IsOptional,
   IsPhoneNumber,
   IsString,
   IsStrongPassword,
@@ -13,6 +14,11 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+
+export enum REGISTRATION_TYPE {
+  EMAIL = 'email',
+  PHONE = 'phone',
+}
 
 export class VerifyPhoneNumberDto {
   @ApiProperty({
@@ -79,21 +85,23 @@ export class CompleteEmailVerificationDto {
 }
 
 export class RegisterDto {
-  // @ApiProperty({
-  //   name: 'User email',
-  //   type: 'string',
-  //   example: 'john@example.com',
-  // })
-  // @IsEmail()
-  // email!: string;
+  @ApiProperty({
+    name: 'email',
+    type: 'string',
+    example: 'john@example.com',
+  })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
   @ApiProperty({
     name: 'phoneNumber',
     type: 'string',
     example: '+1234567890',
   })
+  @IsOptional()
   @IsPhoneNumber()
-  phoneNumber!: string;
+  phoneNumber?: string;
 
   @ApiProperty({
     name: 'password',

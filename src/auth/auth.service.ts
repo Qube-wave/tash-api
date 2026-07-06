@@ -618,6 +618,36 @@ export class AuthService {
     await this.verificationTokensRepository.save(token);
   }
 
+  // private async createRegistrationSession(
+  //   userId: string,
+  //   maxAttempts = 5,
+  // ): Promise<string> {
+  //   const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+  //   const token = String(Math.floor(100000 + Math.random() * 900000));
+
+  //   return this.dataSource.transaction(async (manager) => {
+  //     await manager.delete(VerificationToken, { email });
+
+  //     await manager.save(
+  //       VerificationToken,
+  //       manager.create(VerificationToken, {
+  //         tokenId: randomUUID(),
+  //         email,
+  //         type: VerificationTokenType.Email,
+  //         attempts: 0,
+  //         maxAttempts,
+  //         tokenHash: await this.hashService.hash(token),
+  //         expiresAt: new Date(
+  //           Date.now() + auth.verificationTokenTtlSeconds * 1000,
+  //         ),
+  //         consumedAt: null,
+  //       }),
+  //     );
+
+  //     return token;
+  //   });
+  // }
+
   private async getRefreshTokenId(refreshToken: string): Promise<string> {
     const tokenId = await this.tryGetRefreshTokenId(refreshToken);
     if (tokenId === null) {

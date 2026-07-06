@@ -8,13 +8,18 @@ import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { RegistrationSession } from './entities/registration-session.entity';
 import { VerificationToken } from './entities/verification-token.entity';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { NotificationsModule } from 'src/notifications/notifications.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RefreshToken, VerificationToken]),
+    TypeOrmModule.forFeature([
+      RefreshToken,
+      RegistrationSession,
+      VerificationToken,
+    ]),
     PassportModule,
     JwtModule.register({}),
     CryptoModule,
