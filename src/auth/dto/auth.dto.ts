@@ -84,6 +84,45 @@ export class CompleteEmailVerificationDto {
   token!: string;
 }
 
+export class CompleteOnboardingProfileDto {
+  @ApiProperty({
+    name: 'onboardingSessionToken',
+    type: 'string',
+    example: 'registration-session-token',
+  })
+  @IsNotEmpty()
+  @IsString()
+  onboardingSessionToken!: string;
+
+  @ApiProperty({
+    name: 'firstName',
+    type: 'string',
+    example: 'John',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  firstName!: string;
+
+  @ApiProperty({
+    name: 'lastName',
+    type: 'string',
+    example: 'Doe',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  lastName!: string;
+
+  @ApiProperty({
+    name: 'dateOfBirth',
+    type: 'string',
+    example: '1990-01-01',
+  })
+  @IsDateString()
+  dateOfBirth!: string;
+}
+
 export class RegisterDto {
   @ApiProperty({
     name: 'email',

@@ -37,6 +37,12 @@ export interface ResolvedRecipient {
   lastName: string;
 }
 
+export interface CompleteRegistrationProfileInput {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -191,6 +197,39 @@ export class UsersService {
 
     await this.profilesRepository.save(profile);
     return this.getPublicProfile(uuid);
+  }
+
+  async completeRegistrationProfile(
+    userId: number,
+    input: CompleteRegistrationProfileInput,
+  ): Promise<PublicUserProfile> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      relations: { profile: true },
+    });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new ConflictException('Registration profile cannot be changed.');
+    }
+
+    const profile =
+      user.profile ??
+      this.profilesRepository.create({
+        userId: user.id,
+        country: 'NG',
+        defaultCurrency: 'NGN',
+      });
+
+    profile.firstName = input.firstName.trim();
+    profile.lastName = input.lastName.trim();
+    profile.dateOfBirth = input.dateOfBirth;
+
+    await this.profilesRepository.save(profile);
+    return this.getPublicProfile(user.uuid);
   }
 
   async updatePaymentTag(

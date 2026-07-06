@@ -25,6 +25,7 @@ import { PublicUserProfile, UsersService } from '../users/users.service';
 import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
+  CompleteOnboardingProfileDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -64,6 +65,11 @@ export interface OnboardingSessionResponse {
   isVerified: true;
   onboardingSessionToken: string;
   currentStep: RegistrationStep;
+}
+
+export interface OnboardingStepResponse {
+  currentStep: RegistrationStep;
+  user: PublicUserProfile;
 }
 
 @Injectable()
@@ -174,6 +180,32 @@ export class AuthService {
       isVerified: true,
       onboardingSessionToken: session.token,
       currentStep: session.currentStep,
+    };
+  }
+
+  async completeOnboardingProfile(
+    dto: CompleteOnboardingProfileDto,
+  ): Promise<OnboardingStepResponse> {
+    const session = await this.getActiveRegistrationSession(
+      dto.onboardingSessionToken,
+      RegistrationStep.Profile,
+    );
+
+    const user = await this.usersService.completeRegistrationProfile(
+      session.userId,
+      {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        dateOfBirth: dto.dateOfBirth,
+      },
+    );
+
+    session.currentStep = RegistrationStep.ClaimTag;
+    await this.registrationSessionsRepository.save(session);
+
+    return {
+      currentStep: session.currentStep,
+      user,
     };
   }
 
@@ -666,6 +698,55 @@ export class AuthService {
   //     return token;
   //   });
   // }
+
+  private async getActiveRegistrationSession(
+    onboardingSessionToken: string,
+    expectedStep: RegistrationStep,
+  ): Promise<RegistrationSession> {
+    const tokenParts = onboardingSessionToken.split('.');
+
+    if (tokenParts.length !== 2) {
+      throw new BadRequestException('Invalid onboarding session.');
+    }
+
+    const [tokenId, tokenSecret] = tokenParts;
+
+    if (tokenId === '' || tokenSecret === '') {
+      throw new BadRequestException('Invalid onboarding session.');
+    }
+
+    const session = await this.registrationSessionsRepository.findOne({
+      where: { tokenId, completedAt: IsNull() },
+      relations: { user: true },
+    });
+
+    if (session === null) {
+      throw new BadRequestException('Invalid onboarding session.');
+    }
+
+    if (session.expiresAt < new Date()) {
+      throw new BadRequestException('Onboarding session has expired.');
+    }
+
+    if (session.currentStep !== expectedStep) {
+      throw new BadRequestException('Onboarding step is not available.');
+    }
+
+    const tokenMatches = await this.hashService.verify(
+      session.tokenHash,
+      tokenSecret,
+    );
+
+    if (!tokenMatches) {
+      throw new BadRequestException('Invalid onboarding session.');
+    }
+
+    if (session.user.status !== UserStatus.PendingRegistration) {
+      throw new BadRequestException('Registration is already complete.');
+    }
+
+    return session;
+  }
 
   private async createRegistrationSession(
     userId: number,

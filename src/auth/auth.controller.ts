@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
+  CompleteOnboardingProfileDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -22,6 +23,7 @@ import {
   AuthService,
   AuthTokens,
   OnboardingSessionResponse,
+  OnboardingStepResponse,
 } from './auth.service';
 
 @ApiTags('auth')
@@ -53,6 +55,13 @@ export class AuthController {
     @Body() dto: CompleteEmailVerificationDto,
   ): Promise<OnboardingSessionResponse> {
     return this.authService.completeEmailVerification(dto);
+  }
+
+  @Post('onboarding/profile')
+  completeOnboardingProfile(
+    @Body() dto: CompleteOnboardingProfileDto,
+  ): Promise<OnboardingStepResponse> {
+    return this.authService.completeOnboardingProfile(dto);
   }
 
   // @Post('register')
