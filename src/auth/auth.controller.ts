@@ -17,7 +17,12 @@ import {
   VerifyPhoneDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
-import { AuthResponse, AuthService, AuthTokens } from './auth.service';
+import {
+  AuthResponse,
+  AuthService,
+  AuthTokens,
+  OnboardingSessionResponse,
+} from './auth.service';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -32,7 +37,9 @@ export class AuthController {
   }
 
   @Post('complete-phone-verification')
-  completePhoneVerification(@Body() dto: CompletePhoneVerificationDto) {
+  completePhoneVerification(
+    @Body() dto: CompletePhoneVerificationDto,
+  ): Promise<OnboardingSessionResponse> {
     return this.authService.completePhoneVerification(dto);
   }
 
@@ -42,8 +49,10 @@ export class AuthController {
   }
 
   @Post('complete-email-verification')
-  comspleteEmailVerification(@Body() dto: CompleteEmailVerificationDto) {
-    return (this, this.authService.completeEmailVerification(dto));
+  completeEmailVerification(
+    @Body() dto: CompleteEmailVerificationDto,
+  ): Promise<OnboardingSessionResponse> {
+    return this.authService.completeEmailVerification(dto);
   }
 
   // @Post('register')

@@ -38,6 +38,10 @@ import {
 } from './dto/auth.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
 import {
+  RegistrationSession,
+  RegistrationStep,
+} from './entities/registration-session.entity';
+import {
   VerificationToken,
   VerificationTokenType,
 } from './entities/verification-token.entity';
@@ -55,6 +59,13 @@ export interface AuthResponse extends AuthTokens {
   user: PublicUserProfile;
 }
 
+export interface OnboardingSessionResponse {
+  message: string;
+  isVerified: true;
+  onboardingSessionToken: string;
+  currentStep: RegistrationStep;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -62,6 +73,8 @@ export class AuthService {
     private readonly refreshTokensRepository: Repository<RefreshToken>,
     @InjectRepository(VerificationToken)
     private readonly verificationTokensRepository: Repository<VerificationToken>,
+    @InjectRepository(RegistrationSession)
+    private readonly registrationSessionsRepository: Repository<RegistrationSession>,
     private readonly usersService: UsersService,
     private readonly settingsService: SettingsService,
     private readonly hashService: HashService,
@@ -101,18 +114,21 @@ export class AuthService {
 
   async completePhoneVerification(
     dto: CompletePhoneVerificationDto,
-  ): Promise<{ message: string; isVerified: boolean }> {
+  ): Promise<OnboardingSessionResponse> {
     const { phoneNumber, token } = dto;
 
     await this.consumeVerificationToken(VerificationTokenType.Phone, token, {
       phoneNumber,
     });
 
-    await this.usersService.createUserWithPhoneNumber(phoneNumber);
+    const user = await this.usersService.createUserWithPhoneNumber(phoneNumber);
+    const session = await this.createRegistrationSession(user.id);
 
     return {
       message: 'Phone number verified successfully',
       isVerified: true,
+      onboardingSessionToken: session.token,
+      currentStep: session.currentStep,
     };
   }
 
@@ -143,18 +159,21 @@ export class AuthService {
 
   async completeEmailVerification(
     dto: CompleteEmailVerificationDto,
-  ): Promise<{ message: string; isVerified: boolean }> {
+  ): Promise<OnboardingSessionResponse> {
     const { email, token } = dto;
 
     await this.consumeVerificationToken(VerificationTokenType.Email, token, {
       email,
     });
 
-    await this.usersService.createUserWithEmail(email);
+    const user = await this.usersService.createUserWithEmail(email);
+    const session = await this.createRegistrationSession(user.id);
 
     return {
       message: 'Email verified successfully',
       isVerified: true,
+      onboardingSessionToken: session.token,
+      currentStep: session.currentStep,
     };
   }
 
@@ -647,6 +666,35 @@ export class AuthService {
   //     return token;
   //   });
   // }
+
+  private async createRegistrationSession(
+    userId: number,
+  ): Promise<{ token: string; currentStep: RegistrationStep }> {
+    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+    const tokenId = randomUUID();
+    const tokenSecret = randomBytes(32).toString('base64url');
+    const token = `${tokenId}.${tokenSecret}`;
+
+    await this.registrationSessionsRepository.update(
+      { userId, completedAt: IsNull() },
+      { completedAt: new Date() },
+    );
+
+    const session = await this.registrationSessionsRepository.save(
+      this.registrationSessionsRepository.create({
+        tokenId,
+        userId,
+        tokenHash: await this.hashService.hash(tokenSecret),
+        currentStep: RegistrationStep.Profile,
+        completedAt: null,
+        expiresAt: new Date(
+          Date.now() + auth.verificationTokenTtlSeconds * 1000,
+        ),
+      }),
+    );
+
+    return { token, currentStep: session.currentStep };
+  }
 
   private async getRefreshTokenId(refreshToken: string): Promise<string> {
     const tokenId = await this.tryGetRefreshTokenId(refreshToken);
