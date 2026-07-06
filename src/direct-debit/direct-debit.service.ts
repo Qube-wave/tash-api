@@ -5,6 +5,7 @@ import { BvnService } from '../bvn/bvn.service';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
+import { SettingsService } from '../settings/settings.service';
 import { UsersService } from '../users/users.service';
 import {
   assertMandateAmountAllowed,
@@ -46,6 +47,7 @@ export class DirectDebitService {
     private readonly providerFactory: PaymentProviderFactory,
     private readonly usersService: UsersService,
     private readonly bvnService: BvnService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async createMandate(
@@ -155,7 +157,12 @@ export class DirectDebitService {
     const mandate = await this.getForUser(userId, uuid);
     mandate.status = DirectDebitMandateStatus.Revoked;
     mandate.revokedAt = new Date();
-    return this.toResponse(await this.mandatesRepository.save(mandate));
+    const savedMandate = await this.mandatesRepository.save(mandate);
+    await this.settingsService.clearDefaultDirectDebitMandateIfMatches(
+      userId,
+      mandate.id,
+    );
+    return this.toResponse(savedMandate);
   }
 
   assertChargeableMandate(mandate: DirectDebitMandate, amount: number): void {

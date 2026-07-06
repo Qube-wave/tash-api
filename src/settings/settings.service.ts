@@ -119,6 +119,44 @@ export class SettingsService {
     return this.toResponse(await this.settingsRepository.save(settings));
   }
 
+  async setDefaultCard(userId: number, cardId: number): Promise<void> {
+    await this.assertDefaultCardAllowed(userId, cardId);
+    const settings = await this.getOrCreateSettings(userId);
+    settings.defaultCardId = cardId;
+    await this.settingsRepository.save(settings);
+  }
+
+  async clearDefaultCardIfMatches(
+    userId: number,
+    cardId: number,
+  ): Promise<void> {
+    const settings = await this.settingsRepository.findOne({
+      where: { userId },
+    });
+    if (settings === null || settings.defaultCardId !== cardId) return;
+
+    settings.defaultCardId = null;
+    await this.settingsRepository.save(settings);
+  }
+
+  async clearDefaultDirectDebitMandateIfMatches(
+    userId: number,
+    mandateId: number,
+  ): Promise<void> {
+    const settings = await this.settingsRepository.findOne({
+      where: { userId },
+    });
+    if (
+      settings === null ||
+      settings.defaultDirectDebitMandateId !== mandateId
+    ) {
+      return;
+    }
+
+    settings.defaultDirectDebitMandateId = null;
+    await this.settingsRepository.save(settings);
+  }
+
   async createTransactionPin(userId: number, pin: string): Promise<void> {
     const existing = await this.pinRepository.findOne({ where: { userId } });
     if (existing !== null) {

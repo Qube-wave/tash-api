@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
+import { SettingsService } from '../settings/settings.service';
 import { UsersService } from '../users/users.service';
 import {
   assertCardChargeable,
@@ -50,6 +51,7 @@ export class CardsService {
     private readonly sessionsRepository: Repository<CardRegistrationSession>,
     private readonly providerFactory: PaymentProviderFactory,
     private readonly usersService: UsersService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async createRegistrationSession(
@@ -148,6 +150,10 @@ export class CardsService {
     session.cardId = card.id;
     await this.sessionsRepository.save(session);
 
+    if (card.isDefault) {
+      await this.settingsService.setDefaultCard(user.id, card.id);
+    }
+
     return this.toResponse(card);
   }
 
@@ -187,14 +193,18 @@ export class CardsService {
 
     await this.cardsRepository.update({ userId }, { isDefault: false });
     card.isDefault = true;
-    return this.toResponse(await this.cardsRepository.save(card));
+    const savedCard = await this.cardsRepository.save(card);
+    await this.settingsService.setDefaultCard(userId, savedCard.id);
+    return this.toResponse(savedCard);
   }
 
   async disable(userId: number, uuid: string): Promise<CardResponse> {
     const card = await this.getForUser(userId, uuid);
     card.status = CardStatus.Disabled;
     card.isDefault = false;
-    return this.toResponse(await this.cardsRepository.save(card));
+    const savedCard = await this.cardsRepository.save(card);
+    await this.settingsService.clearDefaultCardIfMatches(userId, card.id);
+    return this.toResponse(savedCard);
   }
 
   async delete(userId: number, uuid: string): Promise<void> {
@@ -202,6 +212,7 @@ export class CardsService {
     card.status = CardStatus.Revoked;
     card.isDefault = false;
     await this.cardsRepository.save(card);
+    await this.settingsService.clearDefaultCardIfMatches(userId, card.id);
   }
 
   assertChargeableCard(card: Card): void {
