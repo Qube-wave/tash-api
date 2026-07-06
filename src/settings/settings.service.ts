@@ -164,6 +164,11 @@ export class SettingsService {
     await this.pinRepository.save(pin);
   }
 
+  async hasTransactionPin(userId: number): Promise<boolean> {
+    const pin = await this.pinRepository.findOne({ where: { userId } });
+    return pin !== null;
+  }
+
   async validateTransactionPin(
     userId: number,
     pinValue: string,

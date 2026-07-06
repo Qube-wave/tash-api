@@ -98,9 +98,10 @@ export class AuthService {
     const { phoneNumber } = dto;
 
     const existingUser = await this.usersService.findByPhone(phoneNumber);
-    if (existingUser) {
-      throw new BadRequestException('User with phone number already exists');
-    }
+    this.assertCanStartOrResumeRegistration(
+      existingUser,
+      'User with phone number already exists',
+    );
 
     const token =
       await this.createPhoneVerificationTokenWithPhoneNumber(phoneNumber);
@@ -129,8 +130,9 @@ export class AuthService {
       phoneNumber,
     });
 
-    const user = await this.usersService.createUserWithPhoneNumber(phoneNumber);
-    const session = await this.createRegistrationSession(user.id);
+    const user = await this.getOrCreateRegistrationUserByPhone(phoneNumber);
+    const currentStep = await this.getCurrentRegistrationStep(user.id);
+    const session = await this.createRegistrationSession(user.id, currentStep);
 
     return {
       message: 'Phone number verified successfully',
@@ -144,9 +146,10 @@ export class AuthService {
     const { email } = dto;
 
     const existingUser = await this.usersService.findByEmail(email);
-    if (existingUser) {
-      throw new BadRequestException('User with email already exists');
-    }
+    this.assertCanStartOrResumeRegistration(
+      existingUser,
+      'User with email already exists',
+    );
 
     const token = await this.createPhoneVerificationTokenWithEmail(email);
 
@@ -174,8 +177,9 @@ export class AuthService {
       email,
     });
 
-    const user = await this.usersService.createUserWithEmail(email);
-    const session = await this.createRegistrationSession(user.id);
+    const user = await this.getOrCreateRegistrationUserByEmail(email);
+    const currentStep = await this.getCurrentRegistrationStep(user.id);
+    const session = await this.createRegistrationSession(user.id, currentStep);
 
     return {
       message: 'Email verified successfully',
@@ -743,6 +747,77 @@ export class AuthService {
   //   });
   // }
 
+  private assertCanStartOrResumeRegistration(
+    user: User | null,
+    existingUserMessage: string,
+  ): void {
+    if (user === null) {
+      return;
+    }
+
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new BadRequestException(existingUserMessage);
+    }
+  }
+
+  private async getOrCreateRegistrationUserByPhone(
+    phoneNumber: string,
+  ): Promise<User> {
+    const existingUser = await this.usersService.findByPhone(phoneNumber);
+
+    if (existingUser === null) {
+      return this.usersService.createUserWithPhoneNumber(phoneNumber);
+    }
+
+    this.assertCanStartOrResumeRegistration(
+      existingUser,
+      'User with phone number already exists',
+    );
+
+    return this.usersService.markRegistrationPhoneVerified(existingUser);
+  }
+
+  private async getOrCreateRegistrationUserByEmail(
+    email: string,
+  ): Promise<User> {
+    const existingUser = await this.usersService.findByEmail(email);
+
+    if (existingUser === null) {
+      return this.usersService.createUserWithEmail(email);
+    }
+
+    this.assertCanStartOrResumeRegistration(
+      existingUser,
+      'User with email already exists',
+    );
+
+    return this.usersService.markRegistrationEmailVerified(existingUser);
+  }
+
+  private async getCurrentRegistrationStep(
+    userId: number,
+  ): Promise<RegistrationStep> {
+    const progress = await this.usersService.getRegistrationProgress(userId);
+
+    if (progress.user.status !== UserStatus.PendingRegistration) {
+      throw new BadRequestException('Registration is already complete.');
+    }
+
+    if (!progress.hasProfile) {
+      return RegistrationStep.Profile;
+    }
+
+    if (!progress.hasPaymentTag) {
+      return RegistrationStep.ClaimTag;
+    }
+
+    if (!(await this.settingsService.hasTransactionPin(userId))) {
+      return RegistrationStep.Pin;
+    }
+
+    throw new BadRequestException('Registration is already complete.');
+  }
+
   private async getActiveRegistrationSession(
     onboardingSessionToken: string,
     expectedStep: RegistrationStep,
@@ -794,6 +869,7 @@ export class AuthService {
 
   private async createRegistrationSession(
     userId: number,
+    currentStep: RegistrationStep,
   ): Promise<{ token: string; currentStep: RegistrationStep }> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     const tokenId = randomUUID();
@@ -810,7 +886,7 @@ export class AuthService {
         tokenId,
         userId,
         tokenHash: await this.hashService.hash(tokenSecret),
-        currentStep: RegistrationStep.Profile,
+        currentStep,
         completedAt: null,
         expiresAt: new Date(
           Date.now() + auth.verificationTokenTtlSeconds * 1000,

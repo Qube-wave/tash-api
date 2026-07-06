@@ -43,6 +43,12 @@ export interface CompleteRegistrationProfileInput {
   dateOfBirth: string;
 }
 
+export interface RegistrationProgress {
+  user: User;
+  hasProfile: boolean;
+  hasPaymentTag: boolean;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -144,6 +150,41 @@ export class UsersService {
         phoneNumber,
       },
     });
+  }
+
+  async getRegistrationProgress(userId: number): Promise<RegistrationProgress> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      relations: { profile: true },
+    });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    return {
+      user,
+      hasProfile: user.profile != null,
+      hasPaymentTag: user.paymentTag != null,
+    };
+  }
+
+  async markRegistrationPhoneVerified(user: User): Promise<User> {
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new ConflictException('Registration cannot be resumed.');
+    }
+
+    user.phoneVerifiedAt = new Date();
+    return this.usersRepository.save(user);
+  }
+
+  async markRegistrationEmailVerified(user: User): Promise<User> {
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new ConflictException('Registration cannot be resumed.');
+    }
+
+    user.emailVerifiedAt = new Date();
+    return this.usersRepository.save(user);
   }
 
   async getByUuid(uuid: string): Promise<User> {
