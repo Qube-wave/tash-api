@@ -29,6 +29,7 @@ import {
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
   RefreshTokenDto,
+  UnlockDto,
   VerifyEmailDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
@@ -332,50 +333,20 @@ export class AuthService {
   }
 
   async refresh(dto: RefreshTokenDto): Promise<AuthTokens> {
-    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
-    let payload: JwtRefreshTokenPayload;
-
-    try {
-      payload = await this.jwtService.verifyAsync<JwtRefreshTokenPayload>(
-        dto.refreshToken,
-        { secret: auth.refreshTokenSecret },
-      );
-    } catch {
-      throw this.invalidCredentials();
-    }
-
-    if (payload.typ !== 'refresh') {
-      throw this.invalidCredentials();
-    }
-
-    const stored = await this.refreshTokensRepository.findOne({
-      where: { tokenId: payload.jti },
-    });
-    if (
-      stored === null ||
-      stored.revokedAt !== null ||
-      stored.expiresAt < new Date()
-    ) {
-      throw this.invalidCredentials();
-    }
-
-    const tokenMatches = await this.hashService.verify(
-      stored.tokenHash,
-      dto.refreshToken,
-    );
-    if (!tokenMatches) {
-      throw this.invalidCredentials();
-    }
-
-    const user = await this.usersService.getByUuid(payload.sub);
+    const { stored, user } = await this.validateRefreshToken(dto.refreshToken);
     const replacement = await this.issueTokens(user);
-    stored.revokedAt = new Date();
-    stored.replacedByTokenId = await this.getRefreshTokenId(
-      replacement.refreshToken,
-    );
-    await this.refreshTokensRepository.save(stored);
-
+    await this.revokeRefreshToken(stored, replacement.refreshToken);
     return replacement;
+  }
+
+  async unlock(dto: UnlockDto): Promise<AuthResponse> {
+    const { stored, user } = await this.validateRefreshToken(dto.refreshToken);
+
+    await this.settingsService.validateTransactionPin(user.id, dto.pin);
+
+    const replacement = await this.issueTokens(user);
+    await this.revokeRefreshToken(stored, replacement.refreshToken);
+    return this.buildAuthResponseFromTokens(user, replacement);
   }
 
   async logout(userId: number, refreshToken: string): Promise<void> {
@@ -434,8 +405,70 @@ export class AuthService {
     });
   }
 
+  private async validateRefreshToken(
+    refreshToken: string,
+  ): Promise<{ stored: RefreshToken; user: User }> {
+    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+    let payload: JwtRefreshTokenPayload;
+
+    try {
+      payload = await this.jwtService.verifyAsync<JwtRefreshTokenPayload>(
+        refreshToken,
+        { secret: auth.refreshTokenSecret },
+      );
+    } catch {
+      throw this.invalidCredentials();
+    }
+
+    if (payload.typ !== 'refresh') {
+      throw this.invalidCredentials();
+    }
+
+    const stored = await this.refreshTokensRepository.findOne({
+      where: { tokenId: payload.jti },
+    });
+    if (
+      stored === null ||
+      stored.revokedAt !== null ||
+      stored.expiresAt < new Date()
+    ) {
+      throw this.invalidCredentials();
+    }
+
+    const tokenMatches = await this.hashService.verify(
+      stored.tokenHash,
+      refreshToken,
+    );
+    if (!tokenMatches) {
+      throw this.invalidCredentials();
+    }
+
+    return {
+      stored,
+      user: await this.usersService.getByUuid(payload.sub),
+    };
+  }
+
+  private async revokeRefreshToken(
+    stored: RefreshToken,
+    replacementRefreshToken: string,
+  ): Promise<void> {
+    stored.revokedAt = new Date();
+    stored.replacedByTokenId = await this.getRefreshTokenId(
+      replacementRefreshToken,
+    );
+    await this.refreshTokensRepository.save(stored);
+  }
+
   private async buildAuthResponse(user: User): Promise<AuthResponse> {
     const tokens = await this.issueTokens(user);
+    return this.buildAuthResponseFromTokens(user, tokens);
+  }
+
+  private async buildAuthResponseFromTokens(
+    user: User,
+    tokens: AuthTokens,
+  ): Promise<AuthResponse> {
     const publicUser = await this.usersService.getPublicProfile(user.uuid);
 
     return {

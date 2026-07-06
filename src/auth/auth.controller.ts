@@ -10,6 +10,7 @@ import {
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
   RefreshTokenDto,
+  UnlockDto,
   VerifyEmailDto,
   VerifyPhoneNumberDto,
 } from './dto/auth.dto';
@@ -104,6 +105,11 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokens> {
     return this.authService.refresh(dto);
+  }
+
+  @Post('unlock')
+  unlock(@Body() dto: UnlockDto): Promise<AuthResponse> {
+    return this.authService.unlock(dto);
   }
 
   @ApiBearerAuth()

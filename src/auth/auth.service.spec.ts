@@ -60,6 +60,7 @@ function createSession(step: RegistrationStep, overrides = {}) {
 function createService() {
   const refreshTokensRepository = {
     create: jest.fn().mockImplementation((value) => value),
+    findOne: jest.fn(),
     save: jest.fn().mockImplementation(async (value) => value),
   };
   const verificationTokensRepository = {
@@ -82,6 +83,7 @@ function createService() {
     findByPhone: jest.fn(),
     getRegistrationProgress: jest.fn(),
     getPublicProfile: jest.fn(),
+    getByUuid: jest.fn(),
     markLogin: jest.fn(),
     markRegistrationEmailVerified: jest.fn(),
     markRegistrationPhoneVerified: jest.fn(),
@@ -90,6 +92,7 @@ function createService() {
     createDefaults: jest.fn(),
     createTransactionPin: jest.fn(),
     hasTransactionPin: jest.fn().mockResolvedValue(false),
+    validateTransactionPin: jest.fn(),
   };
   const hashService = {
     hash: jest
@@ -103,6 +106,12 @@ function createService() {
       .mockImplementation(async (payload: { typ: string }) =>
         payload.typ === 'access' ? 'access-token' : 'refresh-token',
       ),
+    verifyAsync: jest.fn().mockResolvedValue({
+      sub: 'user-uuid',
+      email: 'ada@example.com',
+      jti: 'refresh-token-id',
+      typ: 'refresh',
+    }),
   };
   const configService = {
     getOrThrow: jest.fn().mockReturnValue(authConfig),
@@ -397,6 +406,85 @@ describe('AuthService onboarding', () => {
     await expect(
       service.sendLoginEmailVerification({ email: 'ada@example.com' }),
     ).rejects.toThrow('Complete registration before signing in.');
+  });
+
+  it('unlocks with refresh token and pin, then rotates refresh tokens', async () => {
+    const { service, refreshTokensRepository, usersService, settingsService } =
+      createService();
+    const storedRefreshToken = {
+      tokenId: 'refresh-token-id',
+      userId: 42,
+      tokenHash: 'hashed-refresh-token',
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      replacedByTokenId: null,
+    };
+    const activeUser = {
+      id: 42,
+      uuid: 'user-uuid',
+      email: 'ada@example.com',
+      status: UserStatus.Active,
+      userTypes: [UserType.Consumer],
+    } as User;
+    const activeProfile = { ...publicProfile, status: UserStatus.Active };
+
+    refreshTokensRepository.findOne.mockResolvedValue(storedRefreshToken);
+    usersService.getByUuid.mockResolvedValue(activeUser);
+    usersService.getPublicProfile.mockResolvedValue(activeProfile);
+
+    const response = await service.unlock({
+      refreshToken: 'refresh-token',
+      pin: '1234',
+    });
+
+    expect(settingsService.validateTransactionPin).toHaveBeenCalledWith(
+      42,
+      '1234',
+    );
+    expect(storedRefreshToken.revokedAt).toBeInstanceOf(Date);
+    expect(storedRefreshToken.replacedByTokenId).toBe('refresh-token-id');
+    expect(refreshTokensRepository.save).toHaveBeenCalledWith(
+      storedRefreshToken,
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        user: activeProfile,
+      }),
+    );
+  });
+
+  it('does not rotate refresh tokens when unlock pin validation fails', async () => {
+    const { service, refreshTokensRepository, usersService, settingsService } =
+      createService();
+    const storedRefreshToken = {
+      tokenId: 'refresh-token-id',
+      userId: 42,
+      tokenHash: 'hashed-refresh-token',
+      expiresAt: new Date(Date.now() + 60_000),
+      revokedAt: null,
+      replacedByTokenId: null,
+    };
+    const activeUser = {
+      id: 42,
+      uuid: 'user-uuid',
+      email: 'ada@example.com',
+      status: UserStatus.Active,
+      userTypes: [UserType.Consumer],
+    } as User;
+
+    refreshTokensRepository.findOne.mockResolvedValue(storedRefreshToken);
+    usersService.getByUuid.mockResolvedValue(activeUser);
+    settingsService.validateTransactionPin.mockRejectedValue(
+      new Error('Invalid PIN'),
+    );
+
+    await expect(
+      service.unlock({ refreshToken: 'refresh-token', pin: '0000' }),
+    ).rejects.toThrow('Invalid PIN');
+    expect(storedRefreshToken.revokedAt).toBeNull();
+    expect(refreshTokensRepository.save).not.toHaveBeenCalled();
   });
 
   it('rejects an onboarding session used at the wrong step', async () => {

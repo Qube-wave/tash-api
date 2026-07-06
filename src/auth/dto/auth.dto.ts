@@ -164,6 +164,17 @@ export class RefreshTokenDto {
   refreshToken!: string;
 }
 
+export class UnlockDto extends RefreshTokenDto {
+  @ApiProperty({
+    name: 'pin',
+    type: 'string',
+    example: '1234',
+  })
+  @IsString()
+  @Length(4, 4)
+  pin!: string;
+}
+
 export class CreateTransactionPinDuringAuthDto {
   @IsString()
   @Length(4, 6)
