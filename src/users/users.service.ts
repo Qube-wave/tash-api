@@ -5,7 +5,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
-import { CreateUserInput } from './dto/create-user.input';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserProfile } from './entities/user-profile.entity';
 import { User, UserStatus, UserType } from './entities/user.entity';
@@ -92,40 +91,6 @@ export class UsersService {
     });
 
     const savedUser = await this.usersRepository.save(user);
-
-    return savedUser;
-  }
-
-  async createUser(input: CreateUserInput): Promise<User> {
-    const email = input.email.trim().toLowerCase();
-    const phoneNumber = input.phoneNumber.trim();
-    const paymentTag = assertValidPaymentTag(input.paymentTag);
-
-    await this.ensureUniqueIdentity({ email, phoneNumber, paymentTag });
-
-    const user = this.usersRepository.create({
-      email,
-      phoneNumber,
-      paymentTag,
-      passwordHash: input.passwordHash,
-      status: UserStatus.PendingVerification,
-      userTypes: [UserType.Consumer],
-      emailVerifiedAt: null,
-      phoneVerifiedAt: null,
-      lastLoginAt: null,
-    });
-
-    const savedUser = await this.usersRepository.save(user);
-
-    const profile = this.profilesRepository.create({
-      userId: savedUser.id,
-      firstName: input.firstName.trim(),
-      lastName: input.lastName.trim(),
-      dateOfBirth: input.dateOfBirth,
-      country: input.country.toUpperCase(),
-      defaultCurrency: input.defaultCurrency.toUpperCase(),
-    });
-    await this.profilesRepository.save(profile);
 
     return savedUser;
   }
@@ -369,13 +334,18 @@ export class UsersService {
       relations: { profile: true },
     });
 
-    if (user === null || user.profile === undefined) {
+    if (
+      user === null ||
+      user.profile === undefined ||
+      user.status !== UserStatus.Active ||
+      user.paymentTag === null
+    ) {
       throw new NotFoundException('Recipient was not found.');
     }
 
     return {
       uuid: user.uuid,
-      paymentTag: user.paymentTag ?? '',
+      paymentTag: user.paymentTag,
       firstName: user.profile.firstName,
       lastName: user.profile.lastName,
     };

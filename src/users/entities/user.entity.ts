@@ -13,7 +13,6 @@ import { UserProfile } from './user-profile.entity';
 
 export enum UserStatus {
   PendingRegistration = 'pending_registration',
-  PendingVerification = 'pending_verification',
   Active = 'active',
   Suspended = 'suspended',
   Disabled = 'disabled',
@@ -46,14 +45,11 @@ export class User {
   @Column({ type: 'varchar', length: 32, nullable: true })
   paymentTag!: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  passwordHash!: string | null;
-
   @Column({
     type: 'enum',
     enum: UserStatus,
     enumName: 'user_status_enum',
-    default: UserStatus.PendingVerification,
+    default: UserStatus.PendingRegistration,
   })
   status!: UserStatus;
 

@@ -2,16 +2,25 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Card, CardStatus } from '../cards/entities/card.entity';
 import { ErrorCode } from '../common/errors/error-code';
 import { AppException } from '../common/errors/app.exception';
 import { HashService } from '../common/crypto/hash.service';
 import { SecurityConfiguration } from '../config/security.config';
+import {
+  DirectDebitMandate,
+  DirectDebitMandateStatus,
+} from '../direct-debit/entities/direct-debit-mandate.entity';
+import { Wallet, WalletStatus } from '../wallets/entities/wallet.entity';
 import { UpdatePaymentSettingsDto } from './dto/update-payment-settings.dto';
 import { TransactionPin } from './entities/transaction-pin.entity';
 import { UserPaymentSettings } from './entities/user-payment-settings.entity';
 import { calculateFailedPinState } from './transaction-pin-policy';
 
 export interface PaymentSettingsResponse {
+  defaultCardId: number | null;
+  defaultDirectDebitMandateId: number | null;
+  defaultWalletId: number | null;
   requireTransactionPin: boolean;
   allowCardPayments: boolean;
   allowDirectDebitPayments: boolean;
@@ -30,6 +39,12 @@ export class SettingsService {
     private readonly settingsRepository: Repository<UserPaymentSettings>,
     @InjectRepository(TransactionPin)
     private readonly pinRepository: Repository<TransactionPin>,
+    @InjectRepository(Card)
+    private readonly cardsRepository: Repository<Card>,
+    @InjectRepository(DirectDebitMandate)
+    private readonly mandatesRepository: Repository<DirectDebitMandate>,
+    @InjectRepository(Wallet)
+    private readonly walletsRepository: Repository<Wallet>,
     private readonly hashService: HashService,
     private readonly configService: ConfigService,
   ) {}
@@ -58,13 +73,21 @@ export class SettingsService {
   ): Promise<PaymentSettingsResponse> {
     const settings = await this.getOrCreateSettings(userId);
 
-    if (dto.defaultCardId !== undefined)
+    if (dto.defaultCardId !== undefined) {
+      await this.assertDefaultCardAllowed(userId, dto.defaultCardId);
       settings.defaultCardId = dto.defaultCardId;
+    }
     if (dto.defaultDirectDebitMandateId !== undefined) {
+      await this.assertDefaultDirectDebitMandateAllowed(
+        userId,
+        dto.defaultDirectDebitMandateId,
+      );
       settings.defaultDirectDebitMandateId = dto.defaultDirectDebitMandateId;
     }
-    if (dto.defaultWalletId !== undefined)
+    if (dto.defaultWalletId !== undefined) {
+      await this.assertDefaultWalletAllowed(userId, dto.defaultWalletId);
       settings.defaultWalletId = dto.defaultWalletId;
+    }
     if (dto.requireTransactionPin !== undefined) {
       settings.requireTransactionPin = dto.requireTransactionPin;
     }
@@ -177,6 +200,84 @@ export class SettingsService {
     );
   }
 
+  private async assertDefaultCardAllowed(
+    userId: number,
+    cardId: number | null,
+  ): Promise<void> {
+    if (cardId === null) return;
+
+    const card = await this.cardsRepository.findOne({
+      where: { id: cardId, userId },
+    });
+    if (card === null) {
+      throw new AppException(
+        ErrorCode.CardNotFound,
+        'Default card was not found.',
+        404,
+      );
+    }
+    if (card.status !== CardStatus.Active) {
+      throw new AppException(
+        ErrorCode.CardNotActive,
+        'Default card is not active.',
+        400,
+      );
+    }
+  }
+
+  private async assertDefaultDirectDebitMandateAllowed(
+    userId: number,
+    mandateId: number | null,
+  ): Promise<void> {
+    if (mandateId === null) return;
+
+    const mandate = await this.mandatesRepository.findOne({
+      where: { id: mandateId, userId },
+    });
+    if (mandate === null) {
+      throw new AppException(
+        ErrorCode.DirectDebitMandateNotFound,
+        'Default direct debit mandate was not found.',
+        404,
+      );
+    }
+    if (
+      mandate.status !== DirectDebitMandateStatus.Active ||
+      (mandate.expiresAt !== null && mandate.expiresAt <= new Date())
+    ) {
+      throw new AppException(
+        ErrorCode.DirectDebitMandateNotActive,
+        'Default direct debit mandate is not active.',
+        400,
+      );
+    }
+  }
+
+  private async assertDefaultWalletAllowed(
+    userId: number,
+    walletId: number | null,
+  ): Promise<void> {
+    if (walletId === null) return;
+
+    const wallet = await this.walletsRepository.findOne({
+      where: { id: walletId, userId },
+    });
+    if (wallet === null) {
+      throw new AppException(
+        ErrorCode.WalletNotFound,
+        'Default wallet was not found.',
+        404,
+      );
+    }
+    if (wallet.status !== WalletStatus.Active) {
+      throw new AppException(
+        ErrorCode.WalletRestricted,
+        'Default wallet is not active.',
+        400,
+      );
+    }
+  }
+
   private async getOrCreateSettings(
     userId: number,
   ): Promise<UserPaymentSettings> {
@@ -201,6 +302,9 @@ export class SettingsService {
 
   private toResponse(settings: UserPaymentSettings): PaymentSettingsResponse {
     return {
+      defaultCardId: settings.defaultCardId,
+      defaultDirectDebitMandateId: settings.defaultDirectDebitMandateId,
+      defaultWalletId: settings.defaultWalletId,
       requireTransactionPin: settings.requireTransactionPin,
       allowCardPayments: settings.allowCardPayments,
       allowDirectDebitPayments: settings.allowDirectDebitPayments,
