@@ -26,6 +26,7 @@ import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
   CompleteOnboardingProfileDto,
+  CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -201,6 +202,28 @@ export class AuthService {
     );
 
     session.currentStep = RegistrationStep.ClaimTag;
+    await this.registrationSessionsRepository.save(session);
+
+    return {
+      currentStep: session.currentStep,
+      user,
+    };
+  }
+
+  async completeOnboardingTag(
+    dto: CompleteOnboardingTagDto,
+  ): Promise<OnboardingStepResponse> {
+    const session = await this.getActiveRegistrationSession(
+      dto.onboardingSessionToken,
+      RegistrationStep.ClaimTag,
+    );
+
+    const user = await this.usersService.completeRegistrationPaymentTag(
+      session.userId,
+      dto.paymentTag,
+    );
+
+    session.currentStep = RegistrationStep.Pin;
     await this.registrationSessionsRepository.save(session);
 
     return {

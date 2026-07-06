@@ -123,6 +123,27 @@ export class CompleteOnboardingProfileDto {
   dateOfBirth!: string;
 }
 
+export class CompleteOnboardingTagDto {
+  @ApiProperty({
+    name: 'onboardingSessionToken',
+    type: 'string',
+    example: 'registration-session-token',
+  })
+  @IsNotEmpty()
+  @IsString()
+  onboardingSessionToken!: string;
+
+  @ApiProperty({
+    name: 'paymentTag',
+    type: 'string',
+    example: 'johndoe',
+  })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(31)
+  paymentTag!: string;
+}
+
 export class RegisterDto {
   @ApiProperty({
     name: 'email',

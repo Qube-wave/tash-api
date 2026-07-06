@@ -232,6 +232,39 @@ export class UsersService {
     return this.getPublicProfile(user.uuid);
   }
 
+  async completeRegistrationPaymentTag(
+    userId: number,
+    paymentTag: string,
+  ): Promise<PublicUserProfile> {
+    const tag = assertValidPaymentTag(paymentTag);
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new ConflictException('Registration tag cannot be changed.');
+    }
+
+    if (user.paymentTag === tag) {
+      return this.getPublicProfile(user.uuid);
+    }
+
+    const existing = await this.usersRepository.findOne({
+      where: { paymentTag: tag },
+    });
+    if (existing !== null && existing.id !== user.id) {
+      throw new ConflictException('Payment tag is already in use.');
+    }
+
+    user.paymentTag = tag;
+    await this.usersRepository.save(user);
+    return this.getPublicProfile(user.uuid);
+  }
+
   async updatePaymentTag(
     uuid: string,
     paymentTag: string,

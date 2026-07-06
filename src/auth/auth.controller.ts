@@ -7,6 +7,7 @@ import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
   CompleteOnboardingProfileDto,
+  CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -62,6 +63,13 @@ export class AuthController {
     @Body() dto: CompleteOnboardingProfileDto,
   ): Promise<OnboardingStepResponse> {
     return this.authService.completeOnboardingProfile(dto);
+  }
+
+  @Post('onboarding/tag')
+  completeOnboardingTag(
+    @Body() dto: CompleteOnboardingTagDto,
+  ): Promise<OnboardingStepResponse> {
+    return this.authService.completeOnboardingTag(dto);
   }
 
   // @Post('register')
