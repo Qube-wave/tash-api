@@ -18,6 +18,12 @@ import {
 import { Wallet, WalletStatus } from './entities/wallet.entity';
 import { applyCredit, applyDebit } from './wallet-balance-policy';
 
+export interface WalletUserLockInput<T extends string = string> {
+  key: T;
+  userId: number;
+  walletId: number;
+}
+
 export interface LedgerEntryInput {
   wallet: Wallet;
   transaction: Transaction;
@@ -175,6 +181,27 @@ export class WalletsService {
     }
 
     return wallet;
+  }
+
+  async lockWalletsForUsers<T extends string>(
+    manager: EntityManager,
+    locks: WalletUserLockInput<T>[],
+  ): Promise<Record<T, Wallet>> {
+    const lockedWallets = {} as Record<T, Wallet>;
+    const orderedLocks = [...locks].sort(
+      (left, right) =>
+        left.walletId - right.walletId || left.userId - right.userId,
+    );
+
+    for (const lock of orderedLocks) {
+      lockedWallets[lock.key] = await this.lockWalletForUser(
+        manager,
+        lock.userId,
+        lock.walletId,
+      );
+    }
+
+    return lockedWallets;
   }
 
   async lockUserWalletByCurrency(

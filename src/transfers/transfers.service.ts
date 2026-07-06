@@ -90,23 +90,34 @@ export class TransfersService {
       );
     }
 
+    const recipientWallet = await this.walletsService.getByUserAndCurrency(
+      recipientUser.id,
+      dto.currency,
+    );
+
     await this.settingsService.validateTransactionPin(
       senderUserId,
       dto.transactionPin,
     );
 
     return this.dataSource.transaction(async (manager) => {
-      const lockedSenderWallet = await this.walletsService.lockWalletForUser(
+      const lockedWallets = await this.walletsService.lockWalletsForUsers(
         manager,
-        senderUserId,
-        senderWallet.id,
+        [
+          {
+            key: 'sender',
+            userId: senderUserId,
+            walletId: senderWallet.id,
+          },
+          {
+            key: 'recipient',
+            userId: recipientUser.id,
+            walletId: recipientWallet.id,
+          },
+        ],
       );
-      const lockedRecipientWallet =
-        await this.walletsService.lockUserWalletByCurrency(
-          manager,
-          recipientUser.id,
-          dto.currency,
-        );
+      const lockedSenderWallet = lockedWallets.sender;
+      const lockedRecipientWallet = lockedWallets.recipient;
 
       const senderBalance = this.walletsService.debitLockedWallet(
         lockedSenderWallet,
