@@ -99,8 +99,9 @@ export class CardFundingService {
     }
 
     const response = await this.dataSource.transaction(async (manager) => {
-      const lockedWallet = await this.walletsService.lockWallet(
+      const lockedWallet = await this.walletsService.lockWalletForUser(
         manager,
+        userId,
         wallet.id,
       );
       const balance = this.walletsService.creditLockedWallet(

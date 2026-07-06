@@ -3,8 +3,10 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
-import { WalletLedgerEntry } from './entities/wallet-ledger-entry.entity';
-import { WalletResponse } from './dto/wallet-response.dto';
+import {
+  WalletLedgerEntryResponse,
+  WalletResponse,
+} from './dto/wallet-response.dto';
 import { WalletsService } from './wallets.service';
 
 @ApiTags('wallets')
@@ -39,7 +41,7 @@ export class WalletsController {
   listLedger(
     @CurrentUser() user: AuthenticatedUser,
     @Param('uuid') uuid: string,
-  ): Promise<WalletLedgerEntry[]> {
+  ): Promise<WalletLedgerEntryResponse[]> {
     return this.walletsService.listLedgerForUser(user.id, uuid);
   }
 }

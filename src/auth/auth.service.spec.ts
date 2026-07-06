@@ -94,6 +94,9 @@ function createService() {
     hasTransactionPin: jest.fn().mockResolvedValue(false),
     validateTransactionPin: jest.fn(),
   };
+  const walletsService = {
+    createDefaultWallet: jest.fn(),
+  };
   const hashService = {
     hash: jest
       .fn()
@@ -136,6 +139,7 @@ function createService() {
     registrationSessionsRepository as never,
     usersService as never,
     settingsService as never,
+    walletsService as never,
     hashService as never,
     jwtService as never,
     configService as never,
@@ -150,6 +154,7 @@ function createService() {
     verificationTokensRepository,
     usersService,
     settingsService,
+    walletsService,
     hashService,
     jwtService,
     notificationService,
@@ -214,6 +219,7 @@ describe('AuthService onboarding', () => {
       registrationSessionsRepository,
       usersService,
       settingsService,
+      walletsService,
       refreshTokensRepository,
     } = createService();
     const session = createSession(RegistrationStep.Pin);
@@ -241,6 +247,7 @@ describe('AuthService onboarding', () => {
       '1234',
     );
     expect(usersService.completeRegistration).toHaveBeenCalledWith(42);
+    expect(walletsService.createDefaultWallet).toHaveBeenCalledWith(42);
     expect(session.currentStep).toBe(RegistrationStep.Complete);
     expect(session.completedAt).toBeInstanceOf(Date);
     expect(refreshTokensRepository.save).toHaveBeenCalledWith(

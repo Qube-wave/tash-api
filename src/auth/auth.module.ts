@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CryptoModule } from '../common/crypto/crypto.module';
 import { SettingsModule } from '../settings/settings.module';
 import { UsersModule } from '../users/users.module';
+import { WalletsModule } from '../wallets/wallets.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -24,6 +25,7 @@ import { NotificationsModule } from 'src/notifications/notifications.module';
     JwtModule.register({}),
     CryptoModule,
     UsersModule,
+    WalletsModule,
     forwardRef(() => SettingsModule),
     NotificationsModule,
   ],

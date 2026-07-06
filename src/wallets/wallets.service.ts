@@ -5,7 +5,10 @@ import { EntityManager, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { Transaction } from '../transactions/entities/transaction.entity';
-import { WalletResponse } from './dto/wallet-response.dto';
+import {
+  WalletLedgerEntryResponse,
+  WalletResponse,
+} from './dto/wallet-response.dto';
 import {
   LedgerDirection,
   WalletLedgerEntry,
@@ -109,18 +112,49 @@ export class WalletsService {
   async listLedgerForUser(
     userId: number,
     walletUuid: string,
-  ): Promise<WalletLedgerEntry[]> {
+  ): Promise<WalletLedgerEntryResponse[]> {
     const wallet = await this.getForUser(userId, walletUuid);
-    return this.ledgerRepository.find({
+    const entries = await this.ledgerRepository.find({
       where: { walletId: wallet.id },
       order: { id: 'DESC' },
       take: 50,
     });
+
+    return entries.map((entry) => this.toLedgerResponse(entry));
   }
 
   async lockWallet(manager: EntityManager, walletId: number): Promise<Wallet> {
     const wallet = await manager.findOne(Wallet, {
       where: { id: walletId },
+      lock: { mode: 'pessimistic_write' },
+    });
+
+    if (wallet === null) {
+      throw new AppException(
+        ErrorCode.WalletNotFound,
+        'Wallet was not found.',
+        404,
+      );
+    }
+
+    if (wallet.status !== WalletStatus.Active) {
+      throw new AppException(
+        ErrorCode.WalletRestricted,
+        'Wallet is not active for this operation.',
+        403,
+      );
+    }
+
+    return wallet;
+  }
+
+  async lockWalletForUser(
+    manager: EntityManager,
+    userId: number,
+    walletId: number,
+  ): Promise<Wallet> {
+    const wallet = await manager.findOne(Wallet, {
+      where: { id: walletId, userId },
       lock: { mode: 'pessimistic_write' },
     });
 
@@ -238,9 +272,24 @@ export class WalletsService {
       walletUuid: wallet.uuid,
       currency: wallet.currency,
       availableBalance: Number(wallet.availableBalance),
-      pendingBalance: Number(wallet.pendingBalance),
       ledgerBalance: Number(wallet.ledgerBalance),
       status: wallet.status,
+    };
+  }
+
+  toLedgerResponse(entry: WalletLedgerEntry): WalletLedgerEntryResponse {
+    return {
+      uuid: entry.uuid,
+      reference: entry.reference,
+      direction: entry.direction,
+      entryType: entry.entryType,
+      amount: Number(entry.amount),
+      currency: entry.currency,
+      balanceBefore: Number(entry.balanceBefore),
+      balanceAfter: Number(entry.balanceAfter),
+      status: entry.status,
+      metadata: entry.metadata,
+      createdAt: entry.createdAt,
     };
   }
 

@@ -22,6 +22,7 @@ import { ErrorCode } from '../common/errors/error-code';
 import { SettingsService } from '../settings/settings.service';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { PublicUserProfile, UsersService } from '../users/users.service';
+import { WalletsService } from '../wallets/wallets.service';
 import {
   CompleteEmailVerificationDto,
   CompleteOnboardingPinDto,
@@ -79,6 +80,7 @@ export class AuthService {
     private readonly registrationSessionsRepository: Repository<RegistrationSession>,
     private readonly usersService: UsersService,
     private readonly settingsService: SettingsService,
+    private readonly walletsService: WalletsService,
     private readonly hashService: HashService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
@@ -243,6 +245,7 @@ export class AuthService {
     await this.settingsService.createTransactionPin(session.userId, dto.pin);
 
     const user = await this.usersService.completeRegistration(session.userId);
+    await this.walletsService.createDefaultWallet(session.userId);
 
     session.currentStep = RegistrationStep.Complete;
     session.completedAt = new Date();
