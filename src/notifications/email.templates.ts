@@ -3,11 +3,13 @@ export const emailOtpTemplate = ({
   expiresIn,
   maxAttempts,
   year,
+  logoUrl,
 }: {
   otp: string;
   expiresIn: string;
   maxAttempts: string;
   year: string;
+  logoUrl: string;
 }) => {
   return `
 <!DOCTYPE html>
@@ -51,22 +53,20 @@ export const emailOtpTemplate = ({
             <tr>
               <td align="center">
                 <!-- Logo -->
-                <div
+                <img
+                  src="${logoUrl}"
+                  alt="Tash"
+                  width="48"
+                  height="48"
                   style="
-                    width: 44px;
-                    height: 44px;
+                    display: block;
+                    width: 48px;
+                    height: 48px;
+                    object-fit: contain;
                     border-radius: 12px;
-                    background-color: #c75a3a;
-                    color: #fff6ee;
-                    font-size: 24px;
-                    font-weight: 700;
-                    line-height: 44px;
-                    text-align: center;
-                    margin-bottom: 20px;
+                    margin: 0 auto 20px;
                   "
-                >
-                  P
-                </div>
+                />
 
                 <!-- Title -->
                 <p

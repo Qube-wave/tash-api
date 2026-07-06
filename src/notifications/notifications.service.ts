@@ -8,6 +8,7 @@ import { NOTIFICATION_QUEUE } from 'src/jobs/job-names';
 import { ISendEmail, OtpNotificationData } from './notifications.interface';
 import { Resend } from 'resend';
 import { emailOtpTemplate } from './email.templates';
+import { AppConfiguration } from 'src/config/app.config';
 
 @Injectable()
 export class NotificationsService {
@@ -15,6 +16,7 @@ export class NotificationsService {
   private readonly resend: Resend;
 
   private readonly notificationsConfig: NotificationsConfiguration;
+  private readonly appConfig: AppConfiguration;
   private readonly logger = new Logger(NotificationsService.name);
 
   private readonly emailFrom: string;
@@ -28,6 +30,8 @@ export class NotificationsService {
       this.configService.getOrThrow<NotificationsConfiguration>(
         'notifications',
       );
+
+    this.appConfig = this.configService.getOrThrow<AppConfiguration>('app');
 
     this.africasTalkingClient = axios.create({
       baseURL: this.notificationsConfig.africasTalkingBaseUrl,
@@ -102,6 +106,7 @@ export class NotificationsService {
         expiresIn: String(data.ttl),
         maxAttempts: String(data.attempts),
         year: String(new Date().getFullYear()),
+        logoUrl: `${this.appConfig.baseUrl}/public/images/logo.png`,
       });
 
       await this.sendEmail({

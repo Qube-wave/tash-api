@@ -12,16 +12,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isOtpSmsNotificationData(
-  value: unknown,
-): value is OtpNotificationData {
-  return (
-    isRecord(value) &&
+function isOtpNotificationData(value: unknown): value is OtpNotificationData {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const hasPhoneNumber =
     typeof value.phoneNumber === 'string' &&
+    value.phoneNumber.trim().length > 0;
+
+  const hasEmail =
+    typeof value.email === 'string' && value.email.trim().length > 0;
+
+  return (
+    (hasPhoneNumber || hasEmail) &&
     typeof value.otp === 'string' &&
+    value.otp.length === 6 &&
     typeof value.attempts === 'number' &&
+    Number.isInteger(value.attempts) &&
     typeof value.ttl === 'number' &&
-    value.length === 6
+    Number.isFinite(value.ttl)
   );
 }
 
@@ -34,14 +44,14 @@ export class NotificationsProcessor extends WorkerHost {
   }
 
   async process(job: Job<unknown, void, string>): Promise<void> {
-    if ((job.name = SEND_SMS_OTP_JOB)) {
-      if (!isOtpSmsNotificationData(job.data)) {
+    if (job.name === SEND_SMS_OTP_JOB) {
+      if (!isOtpNotificationData(job.data)) {
         throw new Error(`Invalid notification job payload: ${job.name}`);
       }
 
       await this.notificationService.sendOtpSmsNotification(job.data);
     } else if (job.name === SEND_EMAIL_OTP_JOB) {
-      if (!isOtpSmsNotificationData(job.data)) {
+      if (!isOtpNotificationData(job.data)) {
         throw new Error(`Invalid notification job payload: ${job.name}`);
       }
 

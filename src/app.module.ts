@@ -104,6 +104,7 @@ const featureImports = externalConnectionsEnabled()
     }),
     ServeStaticModule.forRoot({
       rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/public',
     }),
     ...externalImports,
     CommonModule,

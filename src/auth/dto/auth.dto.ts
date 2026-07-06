@@ -48,7 +48,7 @@ export class CompletePhoneVerificationDto {
 
 export class VerifyEmailDto {
   @ApiProperty({
-    name: 'User email',
+    name: 'email',
     type: 'string',
     example: 'john@example.com',
   })

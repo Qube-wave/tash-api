@@ -124,6 +124,20 @@ export class AuthService {
     }
 
     const token = await this.createPhoneVerificationTokenWithEmail(email);
+
+    const emailPayload: OtpNotificationData = {
+      email,
+      attempts: 5,
+      length: 6,
+      otp: token,
+      ttl: 15,
+    };
+
+    await this.notificationService.enqueueOtpEmailNotification(emailPayload);
+
+    return {
+      message: 'A verification code has been sent to your email',
+    };
   }
 
   // async register(dto: RegisterDto): Promise<AuthResponse> {
