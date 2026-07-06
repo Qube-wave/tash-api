@@ -180,9 +180,3 @@ export class UnlockDto extends RefreshTokenDto {
   @Length(4, 4)
   pin!: string;
 }
-
-export class CreateTransactionPinDuringAuthDto {
-  @IsString()
-  @Length(4, 6)
-  pin!: string;
-}

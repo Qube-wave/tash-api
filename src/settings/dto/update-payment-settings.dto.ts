@@ -1,8 +1,8 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBoolean, IsInt, IsObject, IsOptional, Min } from 'class-validator';
 
 export class UpdatePaymentSettingsDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'defaultCardId',
     type: 'number',
   })
@@ -10,7 +10,7 @@ export class UpdatePaymentSettingsDto {
   @IsInt()
   defaultCardId?: number | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'defaultDirectDebitMandateId',
     type: 'number',
   })
@@ -18,7 +18,7 @@ export class UpdatePaymentSettingsDto {
   @IsInt()
   defaultDirectDebitMandateId?: number | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'defaultWalletId',
     type: 'number',
   })
@@ -26,7 +26,7 @@ export class UpdatePaymentSettingsDto {
   @IsInt()
   defaultWalletId?: number | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'requireTransactionPin',
     type: 'boolean',
   })
@@ -34,7 +34,7 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   requireTransactionPin?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'allowCardPayments',
     type: 'boolean',
   })
@@ -42,7 +42,7 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   allowCardPayments?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'allowDirectDebitPayments',
     type: 'boolean',
   })
@@ -50,7 +50,7 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   allowDirectDebitPayments?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'allowWalletPayments',
     type: 'boolean',
   })
@@ -58,7 +58,7 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   allowWalletPayments?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'allowMerchantPayments',
     type: 'boolean',
   })
@@ -66,7 +66,7 @@ export class UpdatePaymentSettingsDto {
   @IsBoolean()
   allowMerchantPayments?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'dailyTransferLimit',
     type: 'number',
   })
@@ -75,7 +75,7 @@ export class UpdatePaymentSettingsDto {
   @Min(0)
   dailyTransferLimit?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'dailyPaymentLimit',
     type: 'number',
   })
@@ -84,7 +84,7 @@ export class UpdatePaymentSettingsDto {
   @Min(0)
   dailyPaymentLimit?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'singleTransactionLimit',
     type: 'number',
   })
@@ -93,7 +93,7 @@ export class UpdatePaymentSettingsDto {
   @Min(0)
   singleTransactionLimit?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     name: 'notificationPreferences',
     type: 'object',
     additionalProperties: true,

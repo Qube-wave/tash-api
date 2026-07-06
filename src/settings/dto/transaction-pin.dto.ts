@@ -21,7 +21,7 @@ export class UpdateTransactionPinDto {
   currentPin!: string;
 
   @ApiProperty({
-    name: 'newPins',
+    name: 'newPin',
     type: 'string',
   })
   @IsString()
