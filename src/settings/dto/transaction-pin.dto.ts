@@ -15,12 +15,3 @@ export class UpdateTransactionPinDto {
   @Length(4, 6)
   newPin!: string;
 }
-
-export class ResetTransactionPinDto {
-  @IsString()
-  currentPassword!: string;
-
-  @IsString()
-  @Length(4, 6)
-  newPin!: string;
-}

@@ -1,8 +1,4 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -10,7 +6,6 @@ import { ErrorCode } from '../common/errors/error-code';
 import { AppException } from '../common/errors/app.exception';
 import { HashService } from '../common/crypto/hash.service';
 import { SecurityConfiguration } from '../config/security.config';
-import { UsersService } from '../users/users.service';
 import { UpdatePaymentSettingsDto } from './dto/update-payment-settings.dto';
 import { TransactionPin } from './entities/transaction-pin.entity';
 import { UserPaymentSettings } from './entities/user-payment-settings.entity';
@@ -37,7 +32,6 @@ export class SettingsService {
     private readonly pinRepository: Repository<TransactionPin>,
     private readonly hashService: HashService,
     private readonly configService: ConfigService,
-    private readonly usersService: UsersService,
   ) {}
 
   async createDefaults(userId: number): Promise<UserPaymentSettings> {
@@ -126,37 +120,6 @@ export class SettingsService {
   ): Promise<void> {
     await this.validateTransactionPin(userId, currentPin);
     const pin = await this.getPin(userId);
-    pin.pinHash = await this.hashService.hash(newPin);
-    pin.failedAttempts = 0;
-    pin.lockedUntil = null;
-    pin.lastChangedAt = new Date();
-    await this.pinRepository.save(pin);
-  }
-
-  async resetTransactionPin(
-    userId: number,
-    currentPassword: string,
-    newPin: string,
-  ): Promise<void> {
-    const user = await this.usersService.findById(userId);
-    if (user === null) {
-      throw new NotFoundException('User was not found.');
-    }
-
-    const validPassword = await this.hashService.verify(
-      user.passwordHash!,
-      currentPassword,
-    );
-    if (!validPassword) {
-      throw new AppException(
-        ErrorCode.InvalidCredentials,
-        'Current password is incorrect.',
-        401,
-      );
-    }
-
-    const existing = await this.pinRepository.findOne({ where: { userId } });
-    const pin = existing ?? this.pinRepository.create({ userId });
     pin.pinHash = await this.hashService.hash(newPin);
     pin.failedAttempts = 0;
     pin.lockedUntil = null;

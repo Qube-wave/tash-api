@@ -5,7 +5,6 @@ import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
   CreateTransactionPinDto,
-  ResetTransactionPinDto,
   UpdateTransactionPinDto,
 } from './dto/transaction-pin.dto';
 import { UpdatePaymentSettingsDto } from './dto/update-payment-settings.dto';
@@ -53,18 +52,5 @@ export class SettingsController {
       dto.newPin,
     );
     return { updated: true };
-  }
-
-  @Post('transaction-pin/reset')
-  async resetTransactionPin(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: ResetTransactionPinDto,
-  ): Promise<{ reset: true }> {
-    await this.settingsService.resetTransactionPin(
-      user.id,
-      dto.currentPassword,
-      dto.newPin,
-    );
-    return { reset: true };
   }
 }
