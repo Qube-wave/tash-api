@@ -16,7 +16,7 @@ export interface VerifyBvnInput {
   firstName: string;
   lastName: string;
   dateOfBirth: string;
-  phoneNumber?: string;
+  phoneNumber?: string | null;
 }
 
 export type ProviderBvnVerificationStatus =

@@ -24,6 +24,7 @@ import { User, UserStatus } from '../users/entities/user.entity';
 import { PublicUserProfile, UsersService } from '../users/users.service';
 import {
   ChangePasswordDto,
+  CompleteEmailVerificationDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -137,6 +138,23 @@ export class AuthService {
 
     return {
       message: 'A verification code has been sent to your email',
+    };
+  }
+
+  async completeEmailVerification(
+    dto: CompleteEmailVerificationDto,
+  ): Promise<{ message: string; isVerified: boolean }> {
+    const { email, token } = dto;
+
+    await this.consumeVerificationToken(VerificationTokenType.Email, token, {
+      email,
+    });
+
+    await this.usersService.createUserWithEmail(email);
+
+    return {
+      message: 'Email verified successfully',
+      isVerified: true,
     };
   }
 
@@ -539,11 +557,13 @@ export class AuthService {
     identification: {
       phoneNumber?: string;
       userId?: number;
+      email?: string;
     },
   ): Promise<void> {
     if (
       identification.phoneNumber === undefined &&
-      identification.userId === undefined
+      identification.userId === undefined &&
+      identification.email === undefined
     ) {
       throw new BadRequestException('Verification target is required');
     }
@@ -558,6 +578,10 @@ export class AuthService {
 
     if (identification.userId !== undefined) {
       whereCriteria.userId = identification.userId;
+    }
+
+    if (identification.email !== undefined) {
+      whereCriteria.email = identification.email;
     }
 
     const token = await this.verificationTokensRepository.findOne({
@@ -589,6 +613,7 @@ export class AuthService {
       throw new BadRequestException('Invalid OTP');
     }
 
+    token.attempts += 1;
     token.consumedAt = now;
     await this.verificationTokensRepository.save(token);
   }

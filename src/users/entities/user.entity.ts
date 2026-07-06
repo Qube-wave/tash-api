@@ -39,8 +39,8 @@ export class User {
   email!: string | null;
 
   @Index({ unique: true })
-  @Column({ type: 'varchar', length: 32 })
-  phoneNumber!: string;
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  phoneNumber!: string | null;
 
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 32, nullable: true })

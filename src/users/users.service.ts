@@ -65,6 +65,25 @@ export class UsersService {
     return savedUser;
   }
 
+  async createUserWithEmail(email: string) {
+    await this.ensureUniqueIdentity({ email });
+
+    const now = new Date();
+
+    const user = this.usersRepository.create({
+      status: UserStatus.PendingRegistration,
+      email,
+      phoneVerifiedAt: null,
+      userTypes: [UserType.Consumer],
+      emailVerifiedAt: now,
+      lastLoginAt: null,
+    });
+
+    const savedUser = await this.usersRepository.save(user);
+
+    return savedUser;
+  }
+
   async createUser(input: CreateUserInput): Promise<User> {
     const email = input.email.trim().toLowerCase();
     const phoneNumber = input.phoneNumber.trim();
@@ -289,7 +308,7 @@ export class UsersService {
     return {
       uuid: user.uuid,
       email: user.email ?? '',
-      phoneNumber: user.phoneNumber,
+      phoneNumber: user.phoneNumber ?? '',
       paymentTag: user.paymentTag ?? '',
       status: user.status,
       userTypes: user.userTypes,

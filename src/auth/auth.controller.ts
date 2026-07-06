@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
   ChangePasswordDto,
+  CompleteEmailVerificationDto,
   CompletePhoneVerificationDto,
   ForgotPasswordDto,
   LoginDto,
@@ -38,6 +39,11 @@ export class AuthController {
   @Post('send-email-verification')
   sendEmailVerification(@Body() dto: VerifyEmailDto) {
     return this.authService.sendEmailVerification(dto);
+  }
+
+  @Post('complete-email-verification')
+  comspleteEmailVerification(@Body() dto: CompleteEmailVerificationDto) {
+    return (this, this.authService.completeEmailVerification(dto));
   }
 
   // @Post('register')

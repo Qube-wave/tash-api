@@ -53,7 +53,7 @@ export class MockPaymentProvider implements PaymentProvider {
       verifiedFirstName: input.firstName,
       verifiedLastName: input.lastName,
       verifiedDateOfBirth: input.dateOfBirth,
-      verifiedPhoneNumber: input.phoneNumber,
+      verifiedPhoneNumber: input.phoneNumber ?? '',
       failureReason: failed ? 'Mock BVN verification failed.' : undefined,
       metadata: sandboxMetadata,
     });
