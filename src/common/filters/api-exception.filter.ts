@@ -30,6 +30,10 @@ function mapHttpStatusToErrorCode(status: number): ErrorCode {
     return ErrorCode.NotFound;
   }
 
+  if (status === 401) {
+    return ErrorCode.UnauthorizedAccess;
+  }
+
   return ErrorCode.InternalServerError;
 }
 

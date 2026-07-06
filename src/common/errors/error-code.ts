@@ -40,4 +40,5 @@ export enum ErrorCode {
   BadRequest = 'BAD_REQUEST',
   NotFound = 'NOT_FOUND',
   InternalServerError = 'INTERNAL_SERVER_ERROR',
+  UnauthorizedAccess = 'UNAUTHORIZED_ACCESS',
 }
