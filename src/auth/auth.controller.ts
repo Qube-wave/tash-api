@@ -4,16 +4,12 @@ import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
-  ChangePasswordDto,
   CompleteEmailVerificationDto,
   CompleteOnboardingPinDto,
   CompleteOnboardingProfileDto,
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
-  ForgotPasswordDto,
-  LoginDto,
   RefreshTokenDto,
-  ResetPasswordDto,
   VerifyEmailDto,
   VerifyEmailTokenDto,
   VerifyPhoneDto,
@@ -107,11 +103,6 @@ export class AuthController {
     return this.authService.completeLoginEmailVerification(dto);
   }
 
-  @Post('login')
-  login(@Body() dto: LoginDto): Promise<AuthResponse> {
-    return this.authService.login(dto);
-  }
-
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokens> {
     return this.authService.refresh(dto);
@@ -158,27 +149,5 @@ export class AuthController {
   ): Promise<{ verified: true }> {
     await this.authService.verifyPhone(user, dto);
     return { verified: true };
-  }
-
-  @Post('password/forgot')
-  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<{ accepted: true }> {
-    return this.authService.forgotPassword(dto);
-  }
-
-  @Post('password/reset')
-  async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ reset: true }> {
-    await this.authService.resetPassword(dto);
-    return { reset: true };
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Post('password/change')
-  async changePassword(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: ChangePasswordDto,
-  ): Promise<{ changed: true }> {
-    await this.authService.changePassword(user.id, dto);
-    return { changed: true };
   }
 }

@@ -23,16 +23,12 @@ import { SettingsService } from '../settings/settings.service';
 import { User, UserStatus } from '../users/entities/user.entity';
 import { PublicUserProfile, UsersService } from '../users/users.service';
 import {
-  ChangePasswordDto,
   CompleteEmailVerificationDto,
   CompleteOnboardingPinDto,
   CompleteOnboardingProfileDto,
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
-  ForgotPasswordDto,
-  LoginDto,
   RefreshTokenDto,
-  ResetPasswordDto,
   VerifyEmailDto,
   VerifyEmailTokenDto,
   VerifyPhoneDto,
@@ -337,35 +333,6 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
-  async login(dto: LoginDto): Promise<AuthResponse> {
-    const user = await this.usersService.findByEmail(dto.email);
-    if (user === null) {
-      throw this.invalidCredentials();
-    }
-
-    if (
-      user.status === UserStatus.Suspended ||
-      user.status === UserStatus.Disabled
-    ) {
-      throw new AppException(
-        ErrorCode.AccountSuspended,
-        'This account cannot sign in.',
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    const validPassword = await this.hashService.verify(
-      user.passwordHash!,
-      dto.password,
-    );
-    if (!validPassword) {
-      throw this.invalidCredentials();
-    }
-
-    await this.usersService.markLogin(user);
-    return this.buildAuthResponse(user);
-  }
-
   async refresh(dto: RefreshTokenDto): Promise<AuthTokens> {
     const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
     let payload: JwtRefreshTokenPayload;
@@ -464,55 +431,6 @@ export class AuthService {
     );
     const entity = await this.usersService.getByUuid(user.uuid);
     await this.usersService.markPhoneVerified(entity);
-  }
-
-  async forgotPassword(_dto: ForgotPasswordDto): Promise<{ accepted: true }> {
-    const user = await this.usersService.findByEmail(_dto.email);
-    if (user !== null) {
-      await this.createVerificationToken(
-        user.id,
-        VerificationTokenType.PasswordReset,
-      );
-    }
-
-    return { accepted: true };
-  }
-
-  async resetPassword(dto: ResetPasswordDto): Promise<void> {
-    const user = await this.usersService.findByEmail(dto.email);
-    if (user === null) {
-      throw this.invalidCredentials();
-    }
-
-    await this.consumeVerificationToken(
-      VerificationTokenType.PasswordReset,
-      dto.token,
-      {
-        userId: user.id,
-      },
-    );
-    user.passwordHash = await this.hashService.hash(dto.newPassword);
-    await this.usersService.markLogin(user);
-    await this.logoutAll(user.id);
-  }
-
-  async changePassword(userId: number, dto: ChangePasswordDto): Promise<void> {
-    const user = await this.usersService.findById(userId);
-    if (user === null) {
-      throw this.invalidCredentials();
-    }
-
-    const validPassword = await this.hashService.verify(
-      user.passwordHash!,
-      dto.currentPassword,
-    );
-    if (!validPassword) {
-      throw this.invalidCredentials();
-    }
-
-    user.passwordHash = await this.hashService.hash(dto.newPassword);
-    await this.usersService.markLogin(user);
-    await this.logoutAll(user.id);
   }
 
   async validateAccessTokenUser(uuid: string): Promise<AuthenticatedUser> {
