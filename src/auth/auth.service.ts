@@ -256,6 +256,87 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
+  async sendLoginPhoneVerification(
+    dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
+    const { phoneNumber } = dto;
+    const user = await this.usersService.findByPhone(phoneNumber);
+    this.assertCanSendLoginOtp(user);
+
+    const token =
+      await this.createPhoneVerificationTokenWithPhoneNumber(phoneNumber);
+
+    const smsOtpPayload: OtpNotificationData = {
+      attempts: 5,
+      length: 6,
+      otp: token,
+      phoneNumber,
+      ttl: 15,
+    };
+
+    await this.notificationService.enqueuOtpSmsNotification(smsOtpPayload);
+
+    return {
+      message: 'A login code has been sent to your phone',
+    };
+  }
+
+  async completeLoginPhoneVerification(
+    dto: CompletePhoneVerificationDto,
+  ): Promise<AuthResponse> {
+    const { phoneNumber, token } = dto;
+
+    await this.consumeVerificationToken(VerificationTokenType.Phone, token, {
+      phoneNumber,
+    });
+
+    const user = await this.usersService.findByPhone(phoneNumber);
+    this.assertCanSendLoginOtp(user);
+
+    await this.usersService.markLogin(user);
+    return this.buildAuthResponse(user);
+  }
+
+  async sendLoginEmailVerification(
+    dto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    const { email } = dto;
+    const user = await this.usersService.findByEmail(email);
+    this.assertCanSendLoginOtp(user);
+
+    const token = await this.createPhoneVerificationTokenWithEmail(email);
+
+    const emailPayload: OtpNotificationData = {
+      email,
+      attempts: 5,
+      length: 6,
+      otp: token,
+      ttl: 15,
+    };
+
+    await this.notificationService.enqueueOtpEmailNotification(emailPayload);
+
+    return {
+      message: 'A login code has been sent to your email',
+    };
+  }
+
+  async completeLoginEmailVerification(
+    dto: CompleteEmailVerificationDto,
+  ): Promise<AuthResponse> {
+    const { email, token } = dto;
+
+    await this.consumeVerificationToken(VerificationTokenType.Email, token, {
+      email,
+    });
+
+    const user = await this.usersService.findByEmail(email);
+    this.assertCanSendLoginOtp(user);
+
+    await this.usersService.markLogin(user);
+    return this.buildAuthResponse(user);
+  }
+
   async login(dto: LoginDto): Promise<AuthResponse> {
     const user = await this.usersService.findByEmail(dto.email);
     if (user === null) {
@@ -695,6 +776,27 @@ export class AuthService {
     token.attempts += 1;
     token.consumedAt = now;
     await this.verificationTokensRepository.save(token);
+  }
+
+  private assertCanSendLoginOtp(user: User | null): asserts user is User {
+    if (user === null) {
+      throw this.invalidCredentials();
+    }
+
+    if (
+      user.status === UserStatus.Suspended ||
+      user.status === UserStatus.Disabled
+    ) {
+      throw new AppException(
+        ErrorCode.AccountSuspended,
+        'This account cannot sign in.',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+
+    if (user.status !== UserStatus.Active) {
+      throw new BadRequestException('Complete registration before signing in.');
+    }
   }
 
   private assertCanStartOrResumeRegistration(

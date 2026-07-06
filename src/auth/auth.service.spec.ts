@@ -82,6 +82,7 @@ function createService() {
     findByPhone: jest.fn(),
     getRegistrationProgress: jest.fn(),
     getPublicProfile: jest.fn(),
+    markLogin: jest.fn(),
     markRegistrationEmailVerified: jest.fn(),
     markRegistrationPhoneVerified: jest.fn(),
   };
@@ -106,8 +107,19 @@ function createService() {
   const configService = {
     getOrThrow: jest.fn().mockReturnValue(authConfig),
   };
-  const notificationService = {};
-  const dataSource = {};
+  const notificationService = {
+    enqueueOtpEmailNotification: jest.fn(),
+    enqueuOtpSmsNotification: jest.fn(),
+  };
+  const dataSource = {
+    transaction: jest.fn(async (callback) =>
+      callback({
+        delete: jest.fn(),
+        create: jest.fn((_entity, value) => value),
+        save: jest.fn(async (_entity, value) => value),
+      }),
+    ),
+  };
 
   const service = new AuthService(
     refreshTokensRepository as never,
@@ -131,6 +143,8 @@ function createService() {
     settingsService,
     hashService,
     jwtService,
+    notificationService,
+    dataSource,
   };
 }
 
@@ -293,6 +307,96 @@ describe('AuthService onboarding', () => {
     );
     expect(response.currentStep).toBe(RegistrationStep.ClaimTag);
     expect(response.onboardingSessionToken).toMatch(/^.+\..+$/);
+  });
+
+  it('sends a login OTP only for active email users', async () => {
+    const { service, usersService, notificationService, dataSource } =
+      createService();
+    const activeUser = {
+      id: 42,
+      uuid: 'user-uuid',
+      email: 'ada@example.com',
+      status: UserStatus.Active,
+      userTypes: [UserType.Consumer],
+    } as User;
+    usersService.findByEmail.mockResolvedValue(activeUser);
+
+    const response = await service.sendLoginEmailVerification({
+      email: 'ada@example.com',
+    });
+
+    expect(dataSource.transaction).toHaveBeenCalled();
+    expect(
+      notificationService.enqueueOtpEmailNotification,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: 'ada@example.com',
+        length: 6,
+        attempts: 5,
+      }),
+    );
+    expect(response).toEqual({
+      message: 'A login code has been sent to your email',
+    });
+  });
+
+  it('completes email OTP login and returns auth tokens', async () => {
+    const {
+      service,
+      verificationTokensRepository,
+      usersService,
+      refreshTokensRepository,
+    } = createService();
+    const activeUser = {
+      id: 42,
+      uuid: 'user-uuid',
+      email: 'ada@example.com',
+      status: UserStatus.Active,
+      userTypes: [UserType.Consumer],
+    } as User;
+    const activeProfile = { ...publicProfile, status: UserStatus.Active };
+
+    verificationTokensRepository.findOne.mockResolvedValue({
+      tokenHash: 'hashed-otp',
+      attempts: 0,
+      maxAttempts: 5,
+      expiresAt: new Date(Date.now() + 60_000),
+      consumedAt: null,
+    });
+    usersService.findByEmail.mockResolvedValue(activeUser);
+    usersService.getPublicProfile.mockResolvedValue(activeProfile);
+
+    const response = await service.completeLoginEmailVerification({
+      email: 'ada@example.com',
+      token: '123456',
+    });
+
+    expect(usersService.markLogin).toHaveBeenCalledWith(activeUser);
+    expect(refreshTokensRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 42 }),
+    );
+    expect(response).toEqual(
+      expect.objectContaining({
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        user: activeProfile,
+      }),
+    );
+  });
+
+  it('rejects OTP login for pending registrations', async () => {
+    const { service, usersService } = createService();
+    usersService.findByEmail.mockResolvedValue({
+      id: 42,
+      uuid: 'user-uuid',
+      email: 'ada@example.com',
+      status: UserStatus.PendingRegistration,
+      userTypes: [UserType.Consumer],
+    } as User);
+
+    await expect(
+      service.sendLoginEmailVerification({ email: 'ada@example.com' }),
+    ).rejects.toThrow('Complete registration before signing in.');
   });
 
   it('rejects an onboarding session used at the wrong step', async () => {

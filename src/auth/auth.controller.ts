@@ -79,6 +79,34 @@ export class AuthController {
     return this.authService.completeOnboardingPin(dto);
   }
 
+  @Post('login/phone/send-verification')
+  sendLoginPhoneVerification(
+    @Body() dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
+    return this.authService.sendLoginPhoneVerification(dto);
+  }
+
+  @Post('login/phone/complete-verification')
+  completeLoginPhoneVerification(
+    @Body() dto: CompletePhoneVerificationDto,
+  ): Promise<AuthResponse> {
+    return this.authService.completeLoginPhoneVerification(dto);
+  }
+
+  @Post('login/email/send-verification')
+  sendLoginEmailVerification(
+    @Body() dto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    return this.authService.sendLoginEmailVerification(dto);
+  }
+
+  @Post('login/email/complete-verification')
+  completeLoginEmailVerification(
+    @Body() dto: CompleteEmailVerificationDto,
+  ): Promise<AuthResponse> {
+    return this.authService.completeLoginEmailVerification(dto);
+  }
+
   @Post('login')
   login(@Body() dto: LoginDto): Promise<AuthResponse> {
     return this.authService.login(dto);
