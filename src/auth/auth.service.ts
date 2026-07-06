@@ -25,6 +25,7 @@ import { PublicUserProfile, UsersService } from '../users/users.service';
 import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
+  CompleteOnboardingPinDto,
   CompleteOnboardingProfileDto,
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
@@ -230,6 +231,26 @@ export class AuthService {
       currentStep: session.currentStep,
       user,
     };
+  }
+
+  async completeOnboardingPin(
+    dto: CompleteOnboardingPinDto,
+  ): Promise<AuthResponse> {
+    const session = await this.getActiveRegistrationSession(
+      dto.onboardingSessionToken,
+      RegistrationStep.Pin,
+    );
+
+    await this.settingsService.createDefaults(session.userId);
+    await this.settingsService.createTransactionPin(session.userId, dto.pin);
+
+    const user = await this.usersService.completeRegistration(session.userId);
+
+    session.currentStep = RegistrationStep.Complete;
+    session.completedAt = new Date();
+    await this.registrationSessionsRepository.save(session);
+
+    return this.buildAuthResponse(user);
   }
 
   // async register(dto: RegisterDto): Promise<AuthResponse> {

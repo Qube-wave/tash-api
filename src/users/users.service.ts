@@ -265,6 +265,32 @@ export class UsersService {
     return this.getPublicProfile(user.uuid);
   }
 
+  async completeRegistration(userId: number): Promise<User> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      relations: { profile: true },
+    });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    if (user.status !== UserStatus.PendingRegistration) {
+      throw new ConflictException('Registration is already complete.');
+    }
+
+    if (user.profile == null) {
+      throw new ConflictException('Registration profile is required.');
+    }
+
+    if (user.paymentTag === null) {
+      throw new ConflictException('Payment tag is required.');
+    }
+
+    user.status = UserStatus.Active;
+    return this.usersRepository.save(user);
+  }
+
   async updatePaymentTag(
     uuid: string,
     paymentTag: string,

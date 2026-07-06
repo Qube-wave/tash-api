@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
   ChangePasswordDto,
   CompleteEmailVerificationDto,
+  CompleteOnboardingPinDto,
   CompleteOnboardingProfileDto,
   CompleteOnboardingTagDto,
   CompletePhoneVerificationDto,
@@ -70,6 +71,13 @@ export class AuthController {
     @Body() dto: CompleteOnboardingTagDto,
   ): Promise<OnboardingStepResponse> {
     return this.authService.completeOnboardingTag(dto);
+  }
+
+  @Post('onboarding/pin')
+  completeOnboardingPin(
+    @Body() dto: CompleteOnboardingPinDto,
+  ): Promise<AuthResponse> {
+    return this.authService.completeOnboardingPin(dto);
   }
 
   // @Post('register')

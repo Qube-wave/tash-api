@@ -144,6 +144,26 @@ export class CompleteOnboardingTagDto {
   paymentTag!: string;
 }
 
+export class CompleteOnboardingPinDto {
+  @ApiProperty({
+    name: 'onboardingSessionToken',
+    type: 'string',
+    example: 'registration-session-token',
+  })
+  @IsNotEmpty()
+  @IsString()
+  onboardingSessionToken!: string;
+
+  @ApiProperty({
+    name: 'pin',
+    type: 'string',
+    example: '1234',
+  })
+  @IsString()
+  @Length(4, 4)
+  pin!: string;
+}
+
 export class RegisterDto {
   @ApiProperty({
     name: 'email',
