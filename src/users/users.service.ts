@@ -15,9 +15,9 @@ import {
 
 export interface PublicUserProfile {
   uuid: string;
-  email: string;
-  phoneNumber: string;
-  paymentTag: string;
+  email: string | null;
+  phoneNumber: string | null;
+  paymentTag: string | null;
   status: UserStatus;
   userTypes: UserType[];
   profile: {
@@ -397,9 +397,9 @@ export class UsersService {
   private toPublicProfile(user: User): PublicUserProfile {
     return {
       uuid: user.uuid,
-      email: user.email ?? '',
-      phoneNumber: user.phoneNumber ?? '',
-      paymentTag: user.paymentTag ?? '',
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      paymentTag: user.paymentTag,
       status: user.status,
       userTypes: user.userTypes,
       profile:
