@@ -160,6 +160,12 @@ export class CompleteOnboardingPinDto {
 }
 
 export class RefreshTokenDto {
+  @ApiProperty({
+    name: 'refreshToken',
+    type: 'string',
+    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...............',
+  })
+  @IsNotEmpty()
   @IsString()
   refreshToken!: string;
 }
