@@ -23,6 +23,7 @@ import {
   InitializeCardRegistrationInput,
   NormalizedWebhookEvent,
   PaymentProvider,
+  ProviderBank,
   ProviderBankAccount,
   ProviderBvnVerification,
   ProviderCard,
@@ -95,6 +96,16 @@ interface NombaTokenizedChargeData {
   message?: unknown;
   transactionId?: unknown;
   orderReference?: unknown;
+}
+
+interface NombaBank {
+  code?: unknown;
+  bankCode?: unknown;
+  name?: unknown;
+  bankName?: unknown;
+  displayName?: unknown;
+  country?: unknown;
+  currency?: unknown;
 }
 
 interface NombaWebhookPayload {
@@ -575,6 +586,20 @@ export class NombaPaymentProvider implements PaymentProvider {
     return Promise.reject(this.notImplemented('createVirtualAccount'));
   }
 
+  async listBanks(): Promise<ProviderBank[]> {
+    const response = await this.request<NombaEnvelope<unknown>>({
+      method: 'GET',
+      url: '/v1/transfers/banks',
+      accountScoped: true,
+    });
+    const data = this.assertSuccessfulEnvelope(
+      response.data,
+      'Could not fetch Nomba banks.',
+    );
+
+    return this.readNombaBanks(data);
+  }
+
   resolveBankAccount(
     input: ResolveBankAccountInput,
   ): Promise<ProviderBankAccount> {
@@ -859,6 +884,56 @@ export class NombaPaymentProvider implements PaymentProvider {
       .update(JSON.stringify(payload))
       .digest('hex')
       .slice(0, 64);
+  }
+
+  private readNombaBanks(value: unknown): ProviderBank[] {
+    const records = this.readNombaBankRecords(value);
+
+    return records
+      .map((bank) => {
+        const code =
+          this.readString(bank.code) ?? this.readString(bank.bankCode);
+        const name =
+          this.readString(bank.name) ??
+          this.readString(bank.bankName) ??
+          this.readString(bank.displayName);
+
+        if (code === undefined || name === undefined) {
+          return undefined;
+        }
+
+        return {
+          name,
+          code,
+          country: this.readString(bank.country) ?? 'NG',
+          currency: this.readString(bank.currency) ?? 'NGN',
+          metadata: this.safeProviderMetadata(bank),
+        };
+      })
+      .filter((bank): bank is ProviderBank => bank !== undefined);
+  }
+
+  private readNombaBankRecords(value: unknown): NombaBank[] {
+    if (Array.isArray(value)) {
+      return value.filter(
+        (item): item is NombaBank => item !== null && typeof item === 'object',
+      );
+    }
+
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      for (const key of ['banks', 'items', 'results', 'data']) {
+        const nested = record[key];
+        if (Array.isArray(nested)) {
+          return nested.filter(
+            (item): item is NombaBank =>
+              item !== null && typeof item === 'object',
+          );
+        }
+      }
+    }
+
+    return [];
   }
 
   private readTokenizedCards(value: unknown): NombaTokenizedCard[] {

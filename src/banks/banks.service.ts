@@ -10,30 +10,18 @@ export interface BankResponse {
   currency: string;
 }
 
-const NIGERIAN_BANKS: readonly BankResponse[] = [
-  { name: 'GTBank', code: '058', country: 'NG', currency: 'NGN' },
-  { name: 'Access Bank', code: '044', country: 'NG', currency: 'NGN' },
-  { name: 'Zenith Bank', code: '057', country: 'NG', currency: 'NGN' },
-  {
-    name: 'United Bank for Africa',
-    code: '033',
-    country: 'NG',
-    currency: 'NGN',
-  },
-  {
-    name: 'First Bank of Nigeria',
-    code: '011',
-    country: 'NG',
-    currency: 'NGN',
-  },
-];
-
 @Injectable()
 export class BanksService {
   constructor(private readonly providerFactory: PaymentProviderFactory) {}
 
-  listBanks(): BankResponse[] {
-    return [...NIGERIAN_BANKS];
+  async listBanks(): Promise<BankResponse[]> {
+    const banks = await this.providerFactory.getProvider().listBanks();
+    return banks.map((bank) => ({
+      name: bank.name,
+      code: bank.code,
+      country: bank.country,
+      currency: bank.currency,
+    }));
   }
 
   resolveAccount(dto: ResolveAccountDto): Promise<ProviderBankAccount> {

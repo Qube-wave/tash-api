@@ -173,6 +173,14 @@ export interface ProviderVirtualAccount {
   metadata: Record<string, unknown>;
 }
 
+export interface ProviderBank {
+  name: string;
+  code: string;
+  country: string;
+  currency: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface ResolveBankAccountInput {
   bankCode: string;
   accountNumber: string;
@@ -264,6 +272,7 @@ export interface PaymentProvider {
   createVirtualAccount(
     input: CreateVirtualAccountInput,
   ): Promise<ProviderVirtualAccount>;
+  listBanks(): Promise<ProviderBank[]>;
   resolveBankAccount(
     input: ResolveBankAccountInput,
   ): Promise<ProviderBankAccount>;

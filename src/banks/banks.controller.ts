@@ -13,7 +13,7 @@ export class BanksController {
   constructor(private readonly banksService: BanksService) {}
 
   @Get()
-  listBanks(): BankResponse[] {
+  listBanks(): Promise<BankResponse[]> {
     return this.banksService.listBanks();
   }
 

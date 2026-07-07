@@ -11,6 +11,7 @@ import {
   InitializeCardRegistrationInput,
   NormalizedWebhookEvent,
   PaymentProvider,
+  ProviderBank,
   ProviderBankAccount,
   ProviderBvnVerification,
   ProviderCard,
@@ -201,6 +202,46 @@ export class MockPaymentProvider implements PaymentProvider {
         type: input.type,
       },
     });
+  }
+
+  listBanks(): Promise<ProviderBank[]> {
+    return Promise.resolve([
+      {
+        name: 'GTBank',
+        code: '058',
+        country: 'NG',
+        currency: 'NGN',
+        metadata: sandboxMetadata,
+      },
+      {
+        name: 'Access Bank',
+        code: '044',
+        country: 'NG',
+        currency: 'NGN',
+        metadata: sandboxMetadata,
+      },
+      {
+        name: 'Zenith Bank',
+        code: '057',
+        country: 'NG',
+        currency: 'NGN',
+        metadata: sandboxMetadata,
+      },
+      {
+        name: 'United Bank for Africa',
+        code: '033',
+        country: 'NG',
+        currency: 'NGN',
+        metadata: sandboxMetadata,
+      },
+      {
+        name: 'First Bank of Nigeria',
+        code: '011',
+        country: 'NG',
+        currency: 'NGN',
+        metadata: sandboxMetadata,
+      },
+    ]);
   }
 
   resolveBankAccount(
