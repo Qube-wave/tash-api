@@ -115,6 +115,31 @@ interface NombaBankAccountLookupData {
   bankName?: unknown;
 }
 
+interface NombaVirtualAccountData {
+  accountRef?: unknown;
+  accountHolderId?: unknown;
+  accountName?: unknown;
+  bankAccountNumber?: unknown;
+  bankAccountName?: unknown;
+  bankName?: unknown;
+  bankCode?: unknown;
+  currency?: unknown;
+  expiryDate?: unknown;
+  expired?: unknown;
+  createdAt?: unknown;
+}
+
+interface NombaBankTransferData {
+  id?: unknown;
+  status?: unknown;
+  type?: unknown;
+  amount?: unknown;
+  fee?: unknown;
+  timeCreated?: unknown;
+  meta?: unknown;
+  message?: unknown;
+}
+
 interface NombaDirectDebitMandateData {
   mandateId?: unknown;
   merchantReference?: unknown;
@@ -601,6 +626,13 @@ export class NombaPaymentProvider implements PaymentProvider {
     const startDate = new Date(Date.now() + 5 * 60 * 1000);
     const endDate = new Date(startDate);
     endDate.setFullYear(endDate.getFullYear() + 1);
+    const bankCode = this.normalizeNombaDirectDebitBankCode(input.bankCode);
+    const customerPhoneNumber = this.normalizeNombaDirectDebitPhoneNumber(
+      input.customerPhoneNumber,
+    );
+    const customerAddress = this.normalizeNombaDirectDebitAddress(
+      input.customerAddress,
+    );
 
     const response = await this.request<
       NombaEnvelope<NombaDirectDebitMandateData>
@@ -610,13 +642,13 @@ export class NombaPaymentProvider implements PaymentProvider {
       accountScoped: true,
       data: {
         customerAccountNumber: input.accountNumber,
-        bankCode: input.bankCode,
+        bankCode,
         customerName: input.customerName,
-        customerAddress: input.customerAddress ?? 'Nigeria',
+        customerAddress,
         customerAccountName: input.accountName,
         frequency: 'VARIABLE',
         narration: 'Tash direct debit mandate',
-        customerPhoneNumber: input.customerPhoneNumber,
+        customerPhoneNumber,
         merchantReference,
         startDate: this.formatNombaDateTime(startDate),
         endDate: this.formatNombaDateTime(endDate),
@@ -624,6 +656,26 @@ export class NombaPaymentProvider implements PaymentProvider {
         startImmediately: true,
       },
     });
+    if (
+      !this.isSuccessfulEnvelope(response.data) ||
+      response.data.data === undefined
+    ) {
+      this.logger.error('Nomba direct debit mandate creation failed', {
+        error: this.safeDirectDebitEnvelopeMetadata(response.data),
+        request: {
+          bankCode,
+          customerEmail: input.customerEmail,
+          customerPhoneNumber,
+          customerAccountNumberLastFour: this.extractLastFourDigits(
+            input.accountNumber,
+          ),
+          merchantReference,
+          startDate: this.formatNombaDateTime(startDate),
+          endDate: this.formatNombaDateTime(endDate),
+        },
+      });
+    }
+
     const data = this.assertSuccessfulEnvelope(
       response.data,
       'Direct-debit mandate creation failed.',
@@ -651,7 +703,7 @@ export class NombaPaymentProvider implements PaymentProvider {
       accountNumberLastFour: this.extractLastFourDigits(
         this.readString(data.customerAccountNumber) ?? input.accountNumber,
       ),
-      bankCode: this.readString(data.bankCode) ?? input.bankCode,
+      bankCode: this.readString(data.bankCode) ?? bankCode,
       failureReason: this.readString(data.rejectionReason),
       metadata: {
         ...this.safeDirectDebitMetadata(data),
@@ -788,11 +840,59 @@ export class NombaPaymentProvider implements PaymentProvider {
     };
   }
 
-  createVirtualAccount(
+  async createVirtualAccount(
     input: CreateVirtualAccountInput,
   ): Promise<ProviderVirtualAccount> {
-    void input;
-    return Promise.reject(this.notImplemented('createVirtualAccount'));
+    const accountRef = `tash_va_${randomUUID().replaceAll('-', '').slice(0, 24)}`;
+    const response = await this.request<NombaEnvelope<NombaVirtualAccountData>>(
+      {
+        method: 'POST',
+        url: '/v1/accounts/virtual',
+        accountScoped: true,
+        data: {
+          accountRef,
+          accountName: input.accountName,
+          currency: input.currency.toUpperCase(),
+          ...(input.expiresAt !== null && input.expiresAt !== undefined
+            ? { expiryDate: this.formatNombaDateTime(input.expiresAt) }
+            : {}),
+        },
+      },
+    );
+    const data = this.assertSuccessfulEnvelope(
+      response.data,
+      'Virtual account creation failed.',
+    );
+    const accountNumber = this.readString(data.bankAccountNumber);
+
+    if (accountNumber === undefined) {
+      throw new AppException(
+        ErrorCode.VirtualAccountCreationFailed,
+        'Nomba did not return a virtual account number.',
+        HttpStatus.BAD_GATEWAY,
+        this.safeProviderMetadata(data),
+      );
+    }
+
+    return {
+      provider: 'nomba',
+      providerCustomerId: this.readString(data.accountHolderId),
+      providerAccountId: this.readString(data.accountRef) ?? accountRef,
+      accountName:
+        this.readString(data.bankAccountName) ??
+        this.readString(data.accountName) ??
+        input.accountName,
+      accountNumber,
+      bankName: this.readString(data.bankName) ?? 'Nomba',
+      bankCode: this.readString(data.bankCode),
+      metadata: {
+        ...this.safeProviderMetadata(data),
+        accountRef: this.readString(data.accountRef) ?? accountRef,
+        type: input.type,
+        purpose: input.purpose,
+        walletUuid: input.walletUuid,
+      },
+    };
   }
 
   async listBanks(): Promise<ProviderBank[]> {
@@ -846,11 +946,59 @@ export class NombaPaymentProvider implements PaymentProvider {
     };
   }
 
-  sendBankTransfer(
+  async sendBankTransfer(
     input: SendBankTransferInput,
   ): Promise<ProviderTransferResult> {
-    void input;
-    return Promise.reject(this.notImplemented('sendBankTransfer'));
+    const response = await this.request<NombaEnvelope<NombaBankTransferData>>({
+      method: 'POST',
+      url: '/v2/transfers/bank',
+      accountScoped: true,
+      data: {
+        amount: input.amount,
+        accountNumber: input.accountNumber,
+        accountName: input.accountName,
+        bankCode: input.bankCode,
+        merchantTxRef: input.reference,
+        senderName: 'Tash',
+        narration: 'Tash payout transfer',
+      },
+    });
+    const data = response.data.data ?? {};
+    const status = this.mapNombaBankTransferStatus(data.status);
+    const providerReference =
+      this.readString(data.id) ??
+      this.readString(this.asRecord(data.meta).merchantTxRef) ??
+      input.reference;
+
+    if (!this.isAcceptableNombaBankTransferEnvelope(response.data)) {
+      return {
+        provider: 'nomba',
+        providerReference,
+        status: 'failed',
+        failureReason:
+          this.readString(data.message) ??
+          this.readDescription(response.data) ??
+          'Bank transfer failed.',
+        metadata: {
+          ...this.safeProviderMetadata(data),
+          merchantTxRef: input.reference,
+        },
+      };
+    }
+
+    return {
+      provider: 'nomba',
+      providerReference,
+      status,
+      failureReason:
+        status === 'failed'
+          ? (this.readString(data.message) ?? 'Bank transfer failed.')
+          : undefined,
+      metadata: {
+        ...this.safeProviderMetadata(data),
+        merchantTxRef: input.reference,
+      },
+    };
   }
 
   refundPayment(input: RefundPaymentInput): Promise<ProviderRefundResult> {
@@ -1205,6 +1353,38 @@ export class NombaPaymentProvider implements PaymentProvider {
     return record as NombaDirectDebitMandateData;
   }
 
+  private normalizeNombaDirectDebitBankCode(bankCode: string): string {
+    const digits = bankCode.replace(/\D/g, '');
+
+    if (digits.length > 5 && digits.startsWith('0')) {
+      return digits.slice(1);
+    }
+
+    return digits;
+  }
+
+  private normalizeNombaDirectDebitPhoneNumber(phoneNumber: string): string {
+    const digits = phoneNumber.replace(/\D/g, '');
+
+    if (digits.startsWith('234') && digits.length === 13) {
+      return `0${digits.slice(3)}`;
+    }
+
+    return digits;
+  }
+
+  private normalizeNombaDirectDebitAddress(
+    address: string | null | undefined,
+  ): string {
+    const normalized = address?.trim();
+
+    if (normalized === undefined || normalized.length < 5) {
+      return 'Nigeria';
+    }
+
+    return normalized.slice(0, 150);
+  }
+
   private mapNombaDirectDebitMandateStatus(
     data: NombaDirectDebitMandateData,
   ): ProviderDirectDebitMandate['status'] {
@@ -1244,6 +1424,35 @@ export class NombaPaymentProvider implements PaymentProvider {
     return 'requires_authorization';
   }
 
+  private isAcceptableNombaBankTransferEnvelope(
+    envelope: NombaEnvelope<NombaBankTransferData>,
+  ): boolean {
+    const code = this.readString(envelope.code);
+    return (
+      (code === undefined ||
+        code === '00' ||
+        code === '200' ||
+        code === '201') &&
+      envelope.data !== undefined
+    );
+  }
+
+  private mapNombaBankTransferStatus(
+    status: unknown,
+  ): ProviderTransferResult['status'] {
+    const normalized = this.readString(status)?.toUpperCase();
+
+    if (normalized === 'SUCCESS' || normalized === 'SUCCESSFUL') {
+      return 'successful';
+    }
+
+    if (normalized === 'REFUND' || normalized === 'FAILED') {
+      return 'failed';
+    }
+
+    return 'pending';
+  }
+
   private isSuccessfulNombaDirectDebitCharge(status: unknown): boolean {
     if (status === true) {
       return true;
@@ -1254,6 +1463,21 @@ export class NombaPaymentProvider implements PaymentProvider {
       normalized !== undefined &&
       ['SUCCESS', 'SUCCESSFUL', 'APPROVED', 'COMPLETED'].includes(normalized)
     );
+  }
+
+  private safeDirectDebitEnvelopeMetadata(
+    envelope: NombaEnvelope<NombaDirectDebitMandateData>,
+  ): Record<string, unknown> {
+    const record = this.asRecord(envelope);
+
+    return {
+      code: record.code,
+      description: record.description,
+      message: record.message,
+      status: record.status,
+      errors: record.errors,
+      data: this.safeDirectDebitMetadata(envelope.data ?? {}),
+    };
   }
 
   private safeDirectDebitMetadata(

@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BvnService } from '../bvn/bvn.service';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
+import { UsersService } from '../users/users.service';
 import { WalletsService } from '../wallets/wallets.service';
 import { CreateVirtualAccountDto } from './dto/virtual-account.dto';
 import {
@@ -34,9 +34,9 @@ export class VirtualAccountsService {
   constructor(
     @InjectRepository(VirtualAccount)
     private readonly virtualAccountsRepository: Repository<VirtualAccount>,
-    private readonly bvnService: BvnService,
     private readonly providerFactory: PaymentProviderFactory,
     private readonly walletsService: WalletsService,
+    private readonly usersService: UsersService,
   ) {}
 
   async create(
@@ -44,15 +44,23 @@ export class VirtualAccountsService {
     userId: number,
     dto: CreateVirtualAccountDto,
   ): Promise<VirtualAccountResponse> {
-    await this.bvnService.assertUserVerified(userUuid);
-    const wallet = await this.walletsService.getForUser(userId, dto.walletUuid);
+    const [wallet, userProfile] = await Promise.all([
+      this.walletsService.getForUser(userId, dto.walletUuid),
+      this.usersService.getPublicProfile(userUuid),
+    ]);
+    const expiresAt =
+      dto.type === VirtualAccountType.Temporary
+        ? new Date(Date.now() + 60 * 60 * 1000)
+        : null;
     const provider = this.providerFactory.getProvider();
     const providerAccount = await provider.createVirtualAccount({
       userUuid,
       walletUuid: wallet.uuid,
+      accountName: this.buildProviderAccountName(userProfile),
       currency: wallet.currency,
       type: dto.type,
       purpose: dto.purpose,
+      expiresAt,
     });
 
     const account = await this.virtualAccountsRepository.save(
@@ -70,10 +78,7 @@ export class VirtualAccountsService {
         type: dto.type,
         purpose: dto.purpose,
         status: VirtualAccountStatus.Active,
-        expiresAt:
-          dto.type === VirtualAccountType.Temporary
-            ? new Date(Date.now() + 60 * 60 * 1000)
-            : null,
+        expiresAt,
         metadata: providerAccount.metadata,
       }),
     );
@@ -175,6 +180,21 @@ export class VirtualAccountsService {
     }
 
     return account;
+  }
+
+  private buildProviderAccountName(user: {
+    paymentTag: string | null;
+    profile: { firstName: string; lastName: string } | null;
+  }): string {
+    if (user.profile !== null) {
+      return `${user.profile.firstName} ${user.profile.lastName}`.trim();
+    }
+
+    if (user.paymentTag !== null) {
+      return `Tash ${user.paymentTag}`;
+    }
+
+    return 'Tash User';
   }
 
   toResponse(account: VirtualAccount): VirtualAccountResponse {

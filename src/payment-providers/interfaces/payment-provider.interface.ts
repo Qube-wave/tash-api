@@ -167,9 +167,11 @@ export interface ChargeDirectDebitMandateInput {
 export interface CreateVirtualAccountInput {
   userUuid: string;
   walletUuid: string;
+  accountName: string;
   currency: string;
   type: 'static' | 'temporary';
   purpose: 'wallet_funding' | 'refund';
+  expiresAt?: Date | null;
 }
 
 export interface ProviderVirtualAccount {

@@ -284,7 +284,7 @@ export class TransfersService {
       savedTransaction.provider = providerResult.provider;
       savedTransaction.providerReference = providerResult.providerReference;
 
-      if (providerResult.status !== 'successful') {
+      if (providerResult.status === 'failed') {
         savedTransaction.failureReason =
           providerResult.failureReason ?? 'Bank transfer failed.';
         this.transactionsService.transition(
@@ -299,10 +299,13 @@ export class TransfersService {
         );
       }
 
-      this.transactionsService.transition(
-        savedTransaction,
-        TransactionStatus.Successful,
-      );
+      if (providerResult.status === 'successful') {
+        this.transactionsService.transition(
+          savedTransaction,
+          TransactionStatus.Successful,
+        );
+      }
+
       await manager.save(savedTransaction);
       await manager.save(Wallet, lockedWallet);
       const ledgerEntry = this.walletsService.createLedgerEntry({

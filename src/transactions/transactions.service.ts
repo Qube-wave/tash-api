@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import {
-  FindOptionsWhere,
-  LessThan,
-  MoreThanOrEqual,
-  Repository,
-} from 'typeorm';
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { ListTransactionsQuery } from './dto/list-transactions.query';
@@ -130,22 +129,67 @@ export class TransactionsService {
     query: ListTransactionsQuery,
   ): Promise<{ items: TransactionResponse[]; nextCursor: string | null }> {
     const limit = query.limit ?? 20;
-    const where: FindOptionsWhere<Transaction> = { userId };
+    const cursor = this.parseCursor(query.cursor);
+    this.assertAmountRange(query.minimumAmount, query.maximumAmount);
 
-    if (query.type !== undefined) where.type = query.type;
-    if (query.status !== undefined) where.status = query.status;
-    if (query.direction !== undefined) where.direction = query.direction;
-    if (query.currency !== undefined)
-      where.currency = query.currency.toUpperCase();
-    if (query.cursor !== undefined) where.id = LessThan(Number(query.cursor));
-    if (query.dateFrom !== undefined)
-      where.createdAt = MoreThanOrEqual(new Date(query.dateFrom));
+    const builder = this.transactionsRepository
+      .createQueryBuilder('transaction')
+      .where('transaction.userId = :userId', { userId });
 
-    const transactions = await this.transactionsRepository.find({
-      where,
-      order: { id: 'DESC' },
-      take: limit + 1,
-    });
+    if (query.type !== undefined) {
+      builder.andWhere('transaction.type = :type', { type: query.type });
+    }
+
+    if (query.status !== undefined) {
+      builder.andWhere('transaction.status = :status', {
+        status: query.status,
+      });
+    }
+
+    if (query.direction !== undefined) {
+      builder.andWhere('transaction.direction = :direction', {
+        direction: query.direction,
+      });
+    }
+
+    if (query.currency !== undefined) {
+      builder.andWhere('transaction.currency = :currency', {
+        currency: query.currency.toUpperCase(),
+      });
+    }
+
+    if (cursor !== undefined) {
+      builder.andWhere('transaction.id < :cursor', { cursor });
+    }
+
+    if (query.dateFrom !== undefined) {
+      builder.andWhere('transaction.createdAt >= :dateFrom', {
+        dateFrom: new Date(query.dateFrom),
+      });
+    }
+
+    if (query.dateTo !== undefined) {
+      builder.andWhere('transaction.createdAt <= :dateTo', {
+        dateTo: new Date(query.dateTo),
+      });
+    }
+
+    if (query.minimumAmount !== undefined) {
+      builder.andWhere('transaction.amount >= :minimumAmount', {
+        minimumAmount: String(query.minimumAmount),
+      });
+    }
+
+    if (query.maximumAmount !== undefined) {
+      builder.andWhere('transaction.amount <= :maximumAmount', {
+        maximumAmount: String(query.maximumAmount),
+      });
+    }
+
+    const transactions = await builder
+      .orderBy('transaction.id', 'DESC')
+      .take(limit + 1)
+      .getMany();
 
     const visible = transactions.slice(0, limit);
     const next = transactions.length > limit ? transactions[limit] : undefined;
@@ -207,6 +251,34 @@ export class TransactionsService {
     }
 
     return this.toResponse(transaction);
+  }
+
+  private parseCursor(cursor: string | undefined): number | undefined {
+    if (cursor === undefined) {
+      return undefined;
+    }
+
+    const parsed = Number(cursor);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new BadRequestException('Invalid transaction cursor.');
+    }
+
+    return parsed;
+  }
+
+  private assertAmountRange(
+    minimumAmount: number | undefined,
+    maximumAmount: number | undefined,
+  ): void {
+    if (
+      minimumAmount !== undefined &&
+      maximumAmount !== undefined &&
+      minimumAmount > maximumAmount
+    ) {
+      throw new BadRequestException(
+        'minimumAmount cannot be greater than maximumAmount.',
+      );
+    }
   }
 
   toResponse(transaction: Transaction): TransactionResponse {

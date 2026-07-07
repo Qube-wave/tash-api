@@ -34,6 +34,17 @@ export interface WebhookProcessingResponse {
   transactionReference?: string;
 }
 
+interface VirtualAccountFundingInput {
+  provider: string;
+  providerEventId: string;
+  providerReference: string;
+  providerAccountId?: string;
+  accountNumber?: string;
+  amount: number;
+  currency: string;
+  metadata?: Record<string, unknown>;
+}
+
 @Injectable()
 export class WebhooksService {
   private readonly logger = new Logger(WebhooksService.name);
@@ -100,8 +111,10 @@ export class WebhooksService {
       }),
     );
 
+    let transactionReference: string | undefined;
+
     try {
-      await this.applyProviderWebhook(savedEvent);
+      transactionReference = await this.applyProviderWebhook(savedEvent);
       savedEvent.status = WebhookEventStatus.Processed;
       savedEvent.processedAt = new Date();
       await this.webhookEventsRepository.save(savedEvent);
@@ -124,6 +137,7 @@ export class WebhooksService {
       duplicate: false,
       providerEventId: event.providerEventId,
       eventType: event.eventType,
+      transactionReference,
     };
   }
 
@@ -153,7 +167,15 @@ export class WebhooksService {
     );
 
     try {
-      const transactionReference = await this.applyVirtualAccountFunding(dto);
+      const transactionReference = await this.applyVirtualAccountFunding({
+        provider: 'mock',
+        providerEventId: dto.providerEventId,
+        providerReference: dto.providerReference,
+        providerAccountId: dto.providerAccountId,
+        accountNumber: dto.accountNumber,
+        amount: dto.amount,
+        currency: dto.currency,
+      });
       event.status = WebhookEventStatus.Processed;
       event.processedAt = new Date();
       await this.webhookEventsRepository.save(event);
@@ -167,9 +189,24 @@ export class WebhooksService {
     }
   }
 
-  private async applyProviderWebhook(event: WebhookEvent): Promise<void> {
+  private async applyProviderWebhook(
+    event: WebhookEvent,
+  ): Promise<string | undefined> {
     if (event.provider !== 'nomba') {
-      return;
+      return undefined;
+    }
+
+    const virtualAccountFunding = this.extractNombaVirtualAccountFunding(event);
+
+    if (virtualAccountFunding !== null) {
+      const transactionReference = await this.applyVirtualAccountFunding(
+        virtualAccountFunding,
+      );
+      this.logger.log('Nomba virtual account funding webhook processed', {
+        providerEventId: event.providerEventId,
+        transactionReference,
+      });
+      return transactionReference;
     }
 
     const result =
@@ -186,28 +223,30 @@ export class WebhooksService {
         reference: result.reference,
         cardUuid: result.cardUuid,
       });
-      return;
+      return undefined;
     }
 
-    this.logger.log('Nomba webhook has no card tokenization action', {
+    this.logger.log('Nomba webhook has no supported action', {
       providerEventId: event.providerEventId,
       eventType: event.eventType,
       reason: result.reason,
       reference: result.reference,
     });
+
+    return undefined;
   }
 
   private async applyVirtualAccountFunding(
-    dto: MockVirtualAccountFundingWebhookDto,
+    input: VirtualAccountFundingInput,
   ): Promise<string> {
     const account =
       await this.virtualAccountsService.findFundingAccountByProviderReference({
-        provider: 'mock',
-        providerAccountId: dto.providerAccountId,
-        accountNumber: dto.accountNumber,
+        provider: input.provider,
+        providerAccountId: input.providerAccountId,
+        accountNumber: input.accountNumber,
       });
 
-    if (account.currency !== dto.currency.toUpperCase()) {
+    if (account.currency !== input.currency.toUpperCase()) {
       throw new AppException(
         ErrorCode.TransferFailed,
         'Webhook currency does not match virtual account currency.',
@@ -222,25 +261,26 @@ export class WebhooksService {
       );
       const balance = this.walletsService.creditLockedWallet(
         lockedWallet,
-        dto.amount,
+        input.amount,
       );
       const transaction = this.transactionsService.createEntity({
         userId: account.userId,
         walletId: lockedWallet.id,
         type: TransactionType.VirtualAccountFunding,
         direction: TransactionDirection.Credit,
-        amount: dto.amount,
-        currency: dto.currency,
+        amount: input.amount,
+        currency: input.currency,
         description: 'Virtual account funding',
-        externalReference: dto.providerReference,
+        externalReference: input.providerReference,
         metadata: {
           virtualAccountUuid: account.uuid,
-          providerEventId: dto.providerEventId,
-          providerReference: dto.providerReference,
+          providerEventId: input.providerEventId,
+          providerReference: input.providerReference,
+          ...(input.metadata ?? {}),
         },
       });
-      transaction.provider = 'mock';
-      transaction.providerReference = dto.providerReference;
+      transaction.provider = input.provider;
+      transaction.providerReference = input.providerReference;
       this.transactionsService.transition(
         transaction,
         TransactionStatus.Processing,
@@ -256,18 +296,102 @@ export class WebhooksService {
         transaction: savedTransaction,
         direction: LedgerDirection.Credit,
         entryType: WalletLedgerEntryType.VirtualAccountFunding,
-        amount: dto.amount,
+        amount: input.amount,
         balanceBefore: balance.before,
         balanceAfter: balance.after,
         metadata: {
           virtualAccountUuid: account.uuid,
-          providerEventId: dto.providerEventId,
-          providerReference: dto.providerReference,
+          providerEventId: input.providerEventId,
+          providerReference: input.providerReference,
+          ...(input.metadata ?? {}),
         },
       });
       await manager.save(WalletLedgerEntry, ledgerEntry);
       return savedTransaction.reference;
     });
+  }
+
+  private extractNombaVirtualAccountFunding(
+    event: WebhookEvent,
+  ): VirtualAccountFundingInput | null {
+    if (event.eventType !== 'payment_success') {
+      return null;
+    }
+
+    const data = this.asRecord(event.payload.data);
+    const transaction = this.asRecord(data.transaction);
+    const customer = this.asRecord(data.customer);
+    const transactionType = this.readString(transaction.type);
+    const aliasAccountType = this.readString(transaction.aliasAccountType);
+
+    if (
+      transactionType !== 'vact_transfer' &&
+      aliasAccountType?.toUpperCase() !== 'VIRTUAL'
+    ) {
+      return null;
+    }
+
+    const amount = this.readAmount(transaction.transactionAmount);
+    const providerReference = this.readString(transaction.transactionId);
+
+    if (amount === undefined || providerReference === undefined) {
+      this.logger.warn(
+        'Nomba virtual account webhook missing required fields',
+        {
+          providerEventId: event.providerEventId,
+          hasAmount: amount !== undefined,
+          hasProviderReference: providerReference !== undefined,
+        },
+      );
+      return null;
+    }
+
+    return {
+      provider: event.provider,
+      providerEventId: event.providerEventId,
+      providerReference,
+      providerAccountId: this.readString(transaction.aliasAccountReference),
+      accountNumber: this.readString(transaction.aliasAccountNumber),
+      amount,
+      currency: 'NGN',
+      metadata: {
+        sessionId: this.readString(transaction.sessionId),
+        narration: this.readString(transaction.narration),
+        senderName: this.readString(customer.senderName),
+        senderBankName: this.readString(customer.bankName),
+        senderBankCode: this.readString(customer.bankCode),
+        senderAccountNumberLastFour: this.readString(
+          customer.accountNumber,
+        )?.slice(-4),
+      },
+    };
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() !== ''
+      ? value.trim()
+      : undefined;
+  }
+
+  private readAmount(value: unknown): number | undefined {
+    const amount =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number(value)
+          : Number.NaN;
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return undefined;
+    }
+
+    return Math.round(amount);
   }
 
   private readHeader(

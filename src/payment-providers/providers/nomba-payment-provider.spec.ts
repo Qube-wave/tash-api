@@ -460,13 +460,13 @@ describe('NombaPaymentProvider', () => {
 
     const result = await provider.createDirectDebitMandate({
       userUuid: 'user-uuid',
-      bankCode: '058',
+      bankCode: '090405',
       accountNumber: '0123456789',
       accountName: 'Test User',
       customerName: 'Test User',
       customerEmail: 'user@example.com',
-      customerPhoneNumber: '08012345678',
-      customerAddress: 'Nigeria',
+      customerPhoneNumber: '+2348012345678',
+      customerAddress: 'NG',
       maximumAmount: 10000,
       currency: 'NGN',
     });
@@ -479,7 +479,7 @@ describe('NombaPaymentProvider', () => {
       status: 'requires_authorization',
       accountName: 'Test User',
       accountNumberLastFour: '6789',
-      bankCode: '058',
+      bankCode: '90405',
       metadata: {
         authorizationDescription:
           'Pay N50.00 into 9880218357 with Paystack-Titan Bank.',
@@ -495,8 +495,9 @@ describe('NombaPaymentProvider', () => {
         }),
         data: expect.objectContaining({
           customerAccountNumber: '0123456789',
-          bankCode: '058',
+          bankCode: '90405',
           customerName: 'Test User',
+          customerAddress: 'Nigeria',
           customerAccountName: 'Test User',
           customerPhoneNumber: '08012345678',
           customerEmail: 'user@example.com',
@@ -647,5 +648,153 @@ describe('NombaPaymentProvider', () => {
         }),
       }),
     );
+  });
+
+  it('creates a Nomba virtual account', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          accountRef: 'account-ref',
+          accountHolderId: 'account-holder-id',
+          accountName: 'Test User',
+          bankAccountNumber: '91714245345',
+          bankAccountName: 'Test User/Tash',
+          bankName: 'Amucha MFB',
+          currency: 'NGN',
+          expiryDate: '2026-07-07T22:00:00',
+          expired: false,
+        },
+      },
+    });
+    const expiresAt = new Date('2026-07-07T22:00:00.000Z');
+
+    const result = await provider.createVirtualAccount({
+      userUuid: 'user-uuid',
+      walletUuid: 'wallet-uuid',
+      accountName: 'Test User',
+      currency: 'NGN',
+      type: 'temporary',
+      purpose: 'wallet_funding',
+      expiresAt,
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerCustomerId: 'account-holder-id',
+      providerAccountId: 'account-ref',
+      accountName: 'Test User/Tash',
+      accountNumber: '91714245345',
+      bankName: 'Amucha MFB',
+      metadata: {
+        accountRef: 'account-ref',
+        type: 'temporary',
+        purpose: 'wallet_funding',
+        walletUuid: 'wallet-uuid',
+      },
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '/v1/accounts/virtual',
+        data: expect.objectContaining({
+          accountRef: expect.stringMatching(/^tash_va_/),
+          accountName: 'Test User',
+          currency: 'NGN',
+          expiryDate: '2026-07-07T22:00',
+        }),
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+      }),
+    );
+  });
+
+  it('performs a successful Nomba bank transfer payout', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '200',
+        description: 'SUCCESS',
+        status: true,
+        data: {
+          id: 'transfer-id',
+          status: 'SUCCESS',
+          amount: 3500,
+          meta: {
+            merchantTxRef: 'transfer_ref',
+          },
+        },
+      },
+    });
+
+    const result = await provider.sendBankTransfer({
+      amount: 3500,
+      currency: 'NGN',
+      reference: 'transfer_ref',
+      bankCode: '058',
+      accountNumber: '0554728140',
+      accountName: 'Test User',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerReference: 'transfer-id',
+      status: 'successful',
+      metadata: {
+        merchantTxRef: 'transfer_ref',
+      },
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '/v2/transfers/bank',
+        data: {
+          amount: 3500,
+          accountNumber: '0554728140',
+          accountName: 'Test User',
+          bankCode: '058',
+          merchantTxRef: 'transfer_ref',
+          senderName: 'Tash',
+          narration: 'Tash payout transfer',
+        },
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+      }),
+    );
+  });
+
+  it('maps processing Nomba bank transfer payouts as pending', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '201',
+        description: 'PROCESSING',
+        status: false,
+        data: {
+          id: 'transfer-id',
+          status: 'PENDING_BILLING',
+        },
+      },
+    });
+
+    const result = await provider.sendBankTransfer({
+      amount: 3500,
+      currency: 'NGN',
+      reference: 'transfer_ref',
+      bankCode: '058',
+      accountNumber: '0554728140',
+      accountName: 'Test User',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerReference: 'transfer-id',
+      status: 'pending',
+    });
   });
 });
