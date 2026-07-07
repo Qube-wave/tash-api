@@ -67,15 +67,17 @@ describe('NombaPaymentProvider', () => {
     const payload = {
       event_type: 'payment_success',
       requestId: 'request-123',
-      merchant: {
-        userId: 'merchant-user',
-        walletId: 'merchant-wallet',
-      },
-      transaction: {
-        transactionId: 'transaction-123',
-        type: 'card',
-        time: '2026-07-07T07:30:00.000Z',
-        responseCode: '00',
+      data: {
+        merchant: {
+          userId: 'merchant-user',
+          walletId: 'merchant-wallet',
+        },
+        transaction: {
+          transactionId: 'transaction-123',
+          type: 'card',
+          time: '2026-07-07T07:30:00.000Z',
+          responseCode: '00',
+        },
       },
     };
     const timestamp = '2026-07-07T07:30:01.000Z';
@@ -90,7 +92,6 @@ describe('NombaPaymentProvider', () => {
         {
           'nomba-signature': signature,
           'nomba-signature-algorithm': 'HmacSHA256',
-          'nomba-sig-value': signaturePayload,
           'nomba-timestamp': timestamp,
         },
         Buffer.from(JSON.stringify(payload)),

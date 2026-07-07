@@ -8,6 +8,7 @@ import type {
   ProviderCardRegistrationStep,
   SubmitCardDetailsInput,
   SubmitCardOtpInput,
+  ResendCardOtpInput,
 } from '../payment-providers/interfaces/payment-provider.interface';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
 import { SettingsService } from '../settings/settings.service';
@@ -54,12 +55,21 @@ export interface CardRegistrationSessionResponse {
   failureReason: string | null;
 }
 
-type CardRegistrationProviderPhase = 'card_details' | 'otp';
+export interface CardTokenizationWebhookResult {
+  processed: boolean;
+  reference?: string;
+  cardUuid?: string;
+  reason?: string;
+}
+
+type CardRegistrationProviderPhase = 'card_details' | 'otp' | 'resend_otp';
 
 const GENERIC_CARD_DETAILS_FAILURE_MESSAGE =
   'Card connection failed. Please check the card details and try again.';
 const GENERIC_CARD_OTP_FAILURE_MESSAGE =
   'Card verification failed. Please check the OTP and try again.';
+const GENERIC_CARD_OTP_RESEND_FAILURE_MESSAGE =
+  'Card OTP could not be resent. Please try again.';
 
 @Injectable()
 export class CardsService {
@@ -218,6 +228,45 @@ export class CardsService {
     return this.saveCompletedRegistrationCard(user, session);
   }
 
+  async resendRegistrationCardOtp(
+    userUuid: string,
+    reference: string,
+  ): Promise<CardRegistrationSessionResponse> {
+    const { session } = await this.getCompletableRegistrationSession(
+      userUuid,
+      reference,
+    );
+    const result = await this.resendProviderCardOtpSafely(session, {
+      reference,
+      transactionId: this.readSessionTransactionId(session),
+    });
+
+    session.metadata = {
+      ...session.metadata,
+      ...sanitizeCardProviderMetadata(result.metadata),
+      cardOtpResentAt: new Date().toISOString(),
+    };
+
+    if (result.status === 'failed') {
+      await this.failProviderPhaseWithGenericResponse(
+        session,
+        'resend_otp',
+        GENERIC_CARD_OTP_RESEND_FAILURE_MESSAGE,
+        {
+          failureReason: result.failureReason,
+          metadata: sanitizeCardProviderMetadata(result.metadata),
+          provider: result.provider,
+          status: result.status,
+        },
+      );
+    }
+
+    session.status = CardRegistrationSessionStatus.Pending;
+    session.failureReason = null;
+    await this.sessionsRepository.save(session);
+    return this.toSessionResponse(session);
+  }
+
   async completeRegistrationSession(
     userUuid: string,
     reference: string,
@@ -305,6 +354,81 @@ export class CardsService {
     return this.cardsRepository.save(card);
   }
 
+  async completeRegistrationFromProviderWebhook(input: {
+    provider: string;
+    providerEventId: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+  }): Promise<CardTokenizationWebhookResult> {
+    if (input.provider !== 'nomba' || input.eventType !== 'payment_success') {
+      return { processed: false, reason: 'unsupported_event' };
+    }
+
+    const tokenizedCard = this.readNombaTokenizedCard(input.payload);
+    const orderReference = this.readNombaWebhookOrderReference(input.payload);
+
+    if (orderReference === undefined) {
+      return { processed: false, reason: 'missing_order_reference' };
+    }
+
+    const tokenKey = this.readString(tokenizedCard.tokenKey);
+    if (tokenKey === undefined || tokenKey.toUpperCase() === 'N/A') {
+      return {
+        processed: false,
+        reference: orderReference,
+        reason: 'missing_token_key',
+      };
+    }
+
+    const session = await this.sessionsRepository.findOne({
+      where: { provider: 'nomba', reference: orderReference },
+    });
+
+    if (session === null) {
+      return {
+        processed: false,
+        reference: orderReference,
+        reason: 'registration_session_not_found',
+      };
+    }
+
+    if (
+      session.status === CardRegistrationSessionStatus.Completed &&
+      session.cardId !== null
+    ) {
+      const existingCard = await this.cardsRepository.findOne({
+        where: { id: session.cardId },
+      });
+
+      return {
+        processed: true,
+        reference: orderReference,
+        cardUuid: existingCard?.uuid,
+      };
+    }
+
+    if (session.status === CardRegistrationSessionStatus.Failed) {
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        'Card registration session has already failed.',
+        400,
+      );
+    }
+
+    const card = await this.saveTokenizedRegistrationCardFromWebhook(
+      session,
+      tokenizedCard,
+      input.payload,
+      input.providerEventId,
+    );
+
+    return {
+      processed: true,
+      reference: orderReference,
+      cardUuid: card.uuid,
+    };
+  }
+
   toResponse(card: Card): CardResponse {
     return {
       uuid: card.uuid,
@@ -321,6 +445,88 @@ export class CardsService {
       lastChargedAt: card.lastChargedAt,
       createdAt: card.createdAt,
     };
+  }
+
+  private async saveTokenizedRegistrationCardFromWebhook(
+    session: CardRegistrationSession,
+    tokenizedCard: Record<string, unknown>,
+    payload: Record<string, unknown>,
+    providerEventId: string,
+  ): Promise<Card> {
+    const order = this.readRecord(this.readRecord(payload.data).order);
+    const transaction = this.readRecord(
+      this.readRecord(payload.data).transaction,
+    );
+    const expiry = this.parseTokenizedCardExpiry(tokenizedCard);
+    const firstCard = await this.cardsRepository.count({
+      where: { userId: session.userId },
+    });
+    const tokenKey = this.readString(tokenizedCard.tokenKey);
+
+    if (tokenKey === undefined) {
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        'Nomba webhook did not include a tokenized card token.',
+        400,
+      );
+    }
+
+    const card = await this.cardsRepository.save(
+      this.cardsRepository.create({
+        userId: session.userId,
+        provider: 'nomba',
+        providerCustomerId:
+          this.readString(tokenizedCard.customerEmail) ??
+          this.readString(order.customerEmail) ??
+          tokenKey,
+        providerCardToken: tokenKey,
+        authorizationReference: session.reference,
+        brand:
+          this.readString(tokenizedCard.cardType)?.toLowerCase() ?? 'unknown',
+        lastFourDigits: this.extractLastFourDigits(
+          this.readString(tokenizedCard.cardPan),
+        ),
+        expiryMonth: expiry.month,
+        expiryYear: expiry.year,
+        cardholderName: null,
+        bankName: null,
+        country: null,
+        currency:
+          this.readString(order.currency)?.toUpperCase() ??
+          this.readSessionCurrency(session),
+        isDefault: firstCard === 0,
+        status: CardStatus.Active,
+        lastChargedAt: null,
+        metadata: sanitizeCardProviderMetadata({
+          tokenizedCardData: tokenizedCard,
+          orderReference: session.reference,
+          providerEventId,
+          transactionId: this.readString(transaction.transactionId),
+          merchantTxRef: this.readString(transaction.merchantTxRef),
+          tokenizedViaWebhookAt: new Date().toISOString(),
+        }),
+      }),
+    );
+
+    session.status = CardRegistrationSessionStatus.Completed;
+    session.cardId = card.id;
+    session.failureReason = null;
+    session.metadata = {
+      ...session.metadata,
+      ...sanitizeCardProviderMetadata({
+        providerEventId,
+        transactionId: this.readString(transaction.transactionId),
+        merchantTxRef: this.readString(transaction.merchantTxRef),
+        tokenizedViaWebhookAt: new Date().toISOString(),
+      }),
+    };
+    await this.sessionsRepository.save(session);
+
+    if (card.isDefault) {
+      await this.settingsService.setDefaultCard(session.userId, card.id);
+    }
+
+    return card;
   }
 
   private async submitProviderCardDetailsSafely(
@@ -352,6 +558,23 @@ export class CardsService {
         session,
         'otp',
         GENERIC_CARD_OTP_FAILURE_MESSAGE,
+        this.serializeError(error),
+      );
+    }
+  }
+
+  private async resendProviderCardOtpSafely(
+    session: CardRegistrationSession,
+    input: ResendCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    const provider = this.providerFactory.getProvider();
+    try {
+      return await provider.resendCardOtp(input);
+    } catch (error: unknown) {
+      return await this.failProviderPhaseWithGenericResponse(
+        session,
+        'resend_otp',
+        GENERIC_CARD_OTP_RESEND_FAILURE_MESSAGE,
         this.serializeError(error),
       );
     }
@@ -511,6 +734,98 @@ export class CardsService {
       metadata: sanitizeCardProviderMetadata(session.metadata),
       failureReason: session.failureReason,
     };
+  }
+
+  private readNombaTokenizedCard(
+    payload: Record<string, unknown>,
+  ): Record<string, unknown> {
+    return this.readRecord(this.readRecord(payload.data).tokenizedCardData);
+  }
+
+  private readNombaWebhookOrderReference(
+    payload: Record<string, unknown>,
+  ): string | undefined {
+    const data = this.readRecord(payload.data);
+    const order = this.readRecord(data.order);
+    const transaction = this.readRecord(data.transaction);
+
+    return (
+      this.readString(order.orderReference) ??
+      this.readString(transaction.merchantTxRef) ??
+      this.readString(payload.orderReference)
+    );
+  }
+
+  private parseTokenizedCardExpiry(tokenizedCard: Record<string, unknown>): {
+    month: string;
+    year: string;
+  } {
+    const expiryDate = this.readString(tokenizedCard.tokenExpirationDate);
+    if (expiryDate !== undefined && expiryDate.toUpperCase() !== 'N/A') {
+      const [first, second] = expiryDate.split('/').map((part) => part.trim());
+      const firstNumber = Number(first);
+      const secondNumber = Number(second);
+
+      if (
+        Number.isInteger(firstNumber) &&
+        firstNumber >= 1 &&
+        firstNumber <= 12
+      ) {
+        return {
+          month: String(firstNumber).padStart(2, '0'),
+          year:
+            second !== undefined && second.length === 2
+              ? `20${second}`
+              : (second ?? '2099'),
+        };
+      }
+
+      if (
+        Number.isInteger(secondNumber) &&
+        secondNumber >= 1 &&
+        secondNumber <= 12
+      ) {
+        return {
+          month: String(secondNumber).padStart(2, '0'),
+          year:
+            first !== undefined && first.length === 2
+              ? `20${first}`
+              : (first ?? '2099'),
+        };
+      }
+    }
+
+    const tokenExpiryMonth = this.readString(tokenizedCard.tokenExpiryMonth);
+    const tokenExpiryYear = this.readString(tokenizedCard.tokenExpiryYear);
+
+    return {
+      month:
+        tokenExpiryMonth !== undefined &&
+        tokenExpiryMonth.toUpperCase() !== 'N/A'
+          ? tokenExpiryMonth.padStart(2, '0')
+          : '12',
+      year:
+        tokenExpiryYear !== undefined && tokenExpiryYear.toUpperCase() !== 'N/A'
+          ? tokenExpiryYear
+          : '2099',
+    };
+  }
+
+  private readRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() !== ''
+      ? value.trim()
+      : undefined;
+  }
+
+  private extractLastFourDigits(maskedPan: string | undefined): string {
+    const digits = maskedPan?.replace(/\D/g, '') ?? '';
+    return digits.slice(-4).padStart(4, '0');
   }
 
   private readSessionCurrency(session: CardRegistrationSession): string {

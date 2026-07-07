@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CardsModule } from '../cards/cards.module';
 import { PaymentProvidersModule } from '../payment-providers/payment-providers.module';
 import { TransactionsModule } from '../transactions/transactions.module';
 import { VirtualAccountsModule } from '../virtual-accounts/virtual-accounts.module';
@@ -12,6 +13,7 @@ import { WebhooksService } from './webhooks.service';
 @Module({
   imports: [
     TypeOrmModule.forFeature([WebhookEvent]),
+    CardsModule,
     PaymentProvidersModule,
     TransactionsModule,
     VirtualAccountsModule,

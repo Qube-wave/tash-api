@@ -39,6 +39,7 @@ import {
   SendBankTransferInput,
   SubmitCardDetailsInput,
   SubmitCardOtpInput,
+  ResendCardOtpInput,
   VerifyBvnInput,
 } from '../interfaces/payment-provider.interface';
 
@@ -101,6 +102,18 @@ interface NombaWebhookPayload {
   eventType?: unknown;
   requestId?: unknown;
   eventId?: unknown;
+  data?: {
+    merchant?: {
+      userId?: unknown;
+      walletId?: unknown;
+    };
+    transaction?: {
+      transactionId?: unknown;
+      type?: unknown;
+      time?: unknown;
+      responseCode?: unknown;
+    };
+  };
   merchant?: {
     userId?: unknown;
     walletId?: unknown;
@@ -308,6 +321,51 @@ export class NombaPaymentProvider implements PaymentProvider {
         ...this.safeProviderMetadata(data),
         ...saveCardResult.metadata,
         transactionId,
+      },
+    };
+  }
+
+  async resendCardOtp(
+    input: ResendCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    const response = await this.request<NombaEnvelope<NombaCardOtpData>>({
+      method: 'POST',
+      url: '/v1/checkout/resend-otp',
+      data: {
+        orderReference: input.reference,
+        ...(input.transactionId !== undefined
+          ? { transactionId: input.transactionId }
+          : {}),
+      },
+    });
+    const data = response.data.data ?? {};
+
+    if (
+      !this.isSuccessfulEnvelope(response.data) ||
+      this.isFalseLike(data.status)
+    ) {
+      return {
+        provider: 'nomba',
+        reference: input.reference,
+        status: 'failed',
+        failureReason:
+          this.readString(data.message) ??
+          this.readDescription(response.data) ??
+          'Card OTP resend failed.',
+        metadata: this.safeProviderMetadata(data),
+      };
+    }
+
+    return {
+      provider: 'nomba',
+      reference: input.reference,
+      status: 'requires_otp',
+      metadata: {
+        ...this.safeProviderMetadata(data),
+        ...(input.transactionId !== undefined
+          ? { transactionId: input.transactionId }
+          : {}),
+        resent: true,
       },
     };
   }
@@ -581,7 +639,8 @@ export class NombaPaymentProvider implements PaymentProvider {
 
   async parseWebhook(payload: unknown): Promise<NormalizedWebhookEvent> {
     const record = this.asRecord(payload);
-    const transaction = this.asRecord(record.transaction);
+    const data = this.asRecord(record.data);
+    const transaction = this.asRecord(data.transaction ?? record.transaction);
     const eventType =
       this.readString(record.event_type) ??
       this.readString(record.eventType) ??
@@ -748,8 +807,9 @@ export class NombaPaymentProvider implements PaymentProvider {
     payload: NombaWebhookPayload,
     timestamp: string,
   ): string {
-    const merchant = this.asRecord(payload.merchant);
-    const transaction = this.asRecord(payload.transaction);
+    const data = this.asRecord(payload.data);
+    const merchant = this.asRecord(data.merchant ?? payload.merchant);
+    const transaction = this.asRecord(data.transaction ?? payload.transaction);
     const responseCode = transaction.responseCode;
 
     return [
@@ -762,7 +822,7 @@ export class NombaPaymentProvider implements PaymentProvider {
       this.readString(transaction.transactionId) ?? '',
       this.readString(transaction.type) ?? '',
       this.readString(transaction.time) ?? '',
-      responseCode === null ? '' : this.readString(responseCode) ?? '',
+      responseCode === null ? '' : (this.readString(responseCode) ?? ''),
       timestamp,
     ].join(':');
   }

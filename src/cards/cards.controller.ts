@@ -65,6 +65,14 @@ export class CardsController {
     );
   }
 
+  @Post('registration-sessions/:reference/resend-otp')
+  resendRegistrationCardOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reference') reference: string,
+  ): Promise<CardRegistrationSessionResponse> {
+    return this.cardsService.resendRegistrationCardOtp(user.uuid, reference);
+  }
+
   @Post('registration-sessions/:reference/complete')
   completeRegistrationSession(
     @CurrentUser() user: AuthenticatedUser,

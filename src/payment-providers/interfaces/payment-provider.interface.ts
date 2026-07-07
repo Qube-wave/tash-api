@@ -65,6 +65,11 @@ export interface SubmitCardOtpInput {
   phoneNumber?: string | null;
 }
 
+export interface ResendCardOtpInput {
+  reference: string;
+  transactionId?: string;
+}
+
 export interface CompleteCardRegistrationInput {
   reference: string;
 }
@@ -239,6 +244,9 @@ export interface PaymentProvider {
   ): Promise<ProviderCardRegistrationStep>;
   submitCardOtp(
     input: SubmitCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep>;
+  resendCardOtp(
+    input: ResendCardOtpInput,
   ): Promise<ProviderCardRegistrationStep>;
   completeCardRegistration(
     input: CompleteCardRegistrationInput,

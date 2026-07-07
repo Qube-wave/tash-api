@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { CardsService } from '../cards/cards.service';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderName } from '../config/payment-provider.config';
@@ -45,6 +46,7 @@ export class WebhooksService {
     private readonly walletsService: WalletsService,
     private readonly transactionsService: TransactionsService,
     private readonly providerFactory: PaymentProviderFactory,
+    private readonly cardsService: CardsService,
   ) {}
 
   async processProviderWebhook(input: {
@@ -81,12 +83,15 @@ export class WebhooksService {
       };
     }
 
-    await this.webhookEventsRepository.save(
+    const savedEvent = await this.webhookEventsRepository.save(
       this.webhookEventsRepository.create({
         provider: event.provider,
         providerEventId: event.providerEventId,
         eventType: event.eventType,
-        signature: this.readHeader(input.headers, `${event.provider}-signature`),
+        signature: this.readHeader(
+          input.headers,
+          `${event.provider}-signature`,
+        ),
         payload: event.payload,
         status: WebhookEventStatus.Received,
         processingAttempts: 0,
@@ -94,6 +99,19 @@ export class WebhooksService {
         processedAt: null,
       }),
     );
+
+    try {
+      await this.applyProviderWebhook(savedEvent);
+      savedEvent.status = WebhookEventStatus.Processed;
+      savedEvent.processedAt = new Date();
+      await this.webhookEventsRepository.save(savedEvent);
+    } catch (error: unknown) {
+      savedEvent.status = WebhookEventStatus.Failed;
+      savedEvent.lastError =
+        error instanceof Error ? error.message : 'Webhook processing failed.';
+      await this.webhookEventsRepository.save(savedEvent);
+      throw error;
+    }
 
     this.logger.log('Payment provider webhook accepted', {
       provider: event.provider,
@@ -147,6 +165,36 @@ export class WebhooksService {
       await this.webhookEventsRepository.save(event);
       throw error;
     }
+  }
+
+  private async applyProviderWebhook(event: WebhookEvent): Promise<void> {
+    if (event.provider !== 'nomba') {
+      return;
+    }
+
+    const result =
+      await this.cardsService.completeRegistrationFromProviderWebhook({
+        provider: event.provider,
+        providerEventId: event.providerEventId,
+        eventType: event.eventType,
+        payload: event.payload,
+      });
+
+    if (result.processed) {
+      this.logger.log('Nomba tokenized card webhook processed', {
+        providerEventId: event.providerEventId,
+        reference: result.reference,
+        cardUuid: result.cardUuid,
+      });
+      return;
+    }
+
+    this.logger.log('Nomba webhook has no card tokenization action', {
+      providerEventId: event.providerEventId,
+      eventType: event.eventType,
+      reason: result.reason,
+      reference: result.reference,
+    });
   }
 
   private async applyVirtualAccountFunding(

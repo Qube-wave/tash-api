@@ -27,6 +27,7 @@ import {
   SendBankTransferInput,
   SubmitCardDetailsInput,
   SubmitCardOtpInput,
+  ResendCardOtpInput,
   VerifyBvnInput,
 } from '../interfaces/payment-provider.interface';
 
@@ -98,6 +99,21 @@ export class MockPaymentProvider implements PaymentProvider {
       failureReason:
         input.otp === '000000' ? 'Mock card OTP failed.' : undefined,
       metadata: sandboxMetadata,
+    });
+  }
+
+  resendCardOtp(
+    input: ResendCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    return Promise.resolve({
+      provider: 'mock',
+      reference: input.reference,
+      status: 'requires_otp',
+      metadata: {
+        ...sandboxMetadata,
+        resent: true,
+        transactionId: input.transactionId,
+      },
     });
   }
 
