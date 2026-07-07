@@ -47,6 +47,26 @@ describe('card policy', () => {
     ).toThrow('not been verified');
   });
 
+  it('rejects completed registration sessions during provider steps', () => {
+    expect(() =>
+      assertCardRegistrationCanProceed(
+        CardRegistrationSessionStatus.Completed,
+        new Date('2026-07-03T10:10:00.000Z'),
+        new Date('2026-07-03T10:00:00.000Z'),
+      ),
+    ).toThrow('cannot proceed from completed');
+  });
+
+  it('rejects failed registration sessions during provider steps', () => {
+    expect(() =>
+      assertCardRegistrationCanProceed(
+        CardRegistrationSessionStatus.Failed,
+        new Date('2026-07-03T10:10:00.000Z'),
+        new Date('2026-07-03T10:00:00.000Z'),
+      ),
+    ).toThrow('cannot proceed from failed');
+  });
+
   it('rejects expired registration sessions', () => {
     expect(() =>
       assertCardRegistrationCanProceed(

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
 import { PaymentProviderConfiguration } from '../../config/payment-provider.config';
@@ -98,6 +98,7 @@ interface CachedNombaToken {
 
 @Injectable()
 export class NombaPaymentProvider implements PaymentProvider {
+  private readonly logger = new Logger(NombaPaymentProvider.name);
   private readonly client: AxiosInstance;
   private cachedToken: CachedNombaToken | null = null;
 
@@ -174,18 +175,13 @@ export class NombaPaymentProvider implements PaymentProvider {
   async submitCardDetails(
     input: SubmitCardDetailsInput,
   ): Promise<ProviderCardRegistrationStep> {
+    const config = this.getReadyPaymentConfig();
     const response = await this.request<NombaEnvelope<NombaCardDetailsData>>({
       method: 'POST',
       url: '/v1/checkout/checkout-card-detail',
       data: {
-        cardDetails: {
-          cardCVV: input.cvv,
-          cardExpiryMonth: Number(input.expiryMonth),
-          cardExpiryYear: Number(this.normalizeExpiryYear(input.expiryYear)),
-          cardNumber: input.cardNumber,
-          ...(input.cardPin !== undefined ? { cardPin: input.cardPin } : {}),
-        },
-        key: '',
+        cardDetails: this.stringifyCardDetails(input),
+        key: config.nombaEncryptionKey,
         orderReference: input.reference,
         saveCard: true,
         deviceInformation: this.defaultDeviceInformation(),
@@ -209,13 +205,26 @@ export class NombaPaymentProvider implements PaymentProvider {
       };
     }
 
+    const transactionId = this.readNombaTransactionId(data);
+    if (transactionId === undefined) {
+      return {
+        provider: 'nomba',
+        reference: input.reference,
+        status: 'failed',
+        failureReason:
+          this.readString(data.message) ??
+          'Nomba did not return a transaction id for OTP verification.',
+        metadata: this.safeProviderMetadata(data),
+      };
+    }
+
     return {
       provider: 'nomba',
       reference: input.reference,
       status: 'requires_otp',
       metadata: {
         ...this.safeProviderMetadata(data),
-        transactionId: this.readString(data.transactionId) ?? input.reference,
+        transactionId,
         nextAction: 'submit_otp',
       },
     };
@@ -224,7 +233,18 @@ export class NombaPaymentProvider implements PaymentProvider {
   async submitCardOtp(
     input: SubmitCardOtpInput,
   ): Promise<ProviderCardRegistrationStep> {
-    const transactionId = input.transactionId ?? input.reference;
+    const transactionId = input.transactionId;
+    if (transactionId === undefined || transactionId === input.reference) {
+      return {
+        provider: 'nomba',
+        reference: input.reference,
+        status: 'failed',
+        failureReason:
+          'Card transaction id is missing. Submit card details again before OTP verification.',
+        metadata: {},
+      };
+    }
+
     const response = await this.request<NombaEnvelope<NombaCardOtpData>>({
       method: 'POST',
       url: '/v1/checkout/checkout-card-otp',
@@ -423,6 +443,30 @@ export class NombaPaymentProvider implements PaymentProvider {
     };
   }
 
+  private readNombaTransactionId(
+    data: NombaCardDetailsData,
+  ): string | undefined {
+    const record = data as Record<string, unknown>;
+    return (
+      this.readString(record.transactionId) ??
+      this.readString(record.transactionID) ??
+      this.readString(record.transaction_id) ??
+      this.readString(record.id)
+    );
+  }
+
+  private stringifyCardDetails(input: SubmitCardDetailsInput): string {
+    return JSON.stringify({
+      cardCVV: Number(input.cvv),
+      cardExpiryMonth: Number(input.expiryMonth),
+      cardExpiryYear: Number(this.normalizeExpiryYear(input.expiryYear)),
+      cardNumber: input.cardNumber,
+      ...(input.cardPin !== undefined
+        ? { cardPin: Number(input.cardPin) }
+        : {}),
+    });
+  }
+
   createDirectDebitMandate(
     input: CreateDirectDebitMandateInput,
   ): Promise<ProviderDirectDebitMandate> {
@@ -580,7 +624,8 @@ export class NombaPaymentProvider implements PaymentProvider {
       config.nombaBaseUrl.trim() === '' ||
       config.nombaParentAccountId.trim() === '' ||
       config.nombaClientId.trim() === '' ||
-      config.nombaPrivateKey.trim() === ''
+      config.nombaPrivateKey.trim() === '' ||
+      config.nombaEncryptionKey.trim() === ''
     ) {
       throw this.notImplemented('credentials');
     }
@@ -729,6 +774,10 @@ export class NombaPaymentProvider implements PaymentProvider {
     }
 
     if (axios.isAxiosError(error)) {
+      this.logger.error('Nomba provider request failed', {
+        error: this.serializeNombaAxiosError(error),
+      });
+
       return new AppException(
         ErrorCode.ProviderUnavailable,
         this.readNombaErrorMessage(error.response?.data) ??
@@ -740,6 +789,10 @@ export class NombaPaymentProvider implements PaymentProvider {
       );
     }
 
+    this.logger.error('Nomba provider request failed', {
+      error: this.serializeError(error),
+    });
+
     return new AppException(
       ErrorCode.ProviderUnavailable,
       'Nomba provider request failed.',
@@ -747,7 +800,50 @@ export class NombaPaymentProvider implements PaymentProvider {
     );
   }
 
+  private serializeNombaAxiosError(error: unknown): Record<string, unknown> {
+    const axiosError = error as {
+      code?: unknown;
+      config?: { method?: unknown; url?: unknown };
+      message?: unknown;
+      response?: { data?: unknown; status?: unknown };
+    };
+
+    return {
+      message: axiosError.message,
+      code: axiosError.code,
+      status: axiosError.response?.status,
+      method: axiosError.config?.method,
+      url: axiosError.config?.url,
+      response: axiosError.response?.data,
+    };
+  }
+
+  private serializeError(error: unknown): Record<string, unknown> {
+    if (error instanceof Error) {
+      return {
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
+    return { message: String(error) };
+  }
+
   private readNombaErrorMessage(value: unknown): string | undefined {
+    if (value !== null && typeof value === 'object') {
+      const record = value as Record<string, unknown>;
+      return (
+        this.readString(record.description) ??
+        this.readString(record.message) ??
+        this.readString(record.error) ??
+        this.readNestedNombaErrorMessage(record.data)
+      );
+    }
+
+    return undefined;
+  }
+
+  private readNestedNombaErrorMessage(value: unknown): string | undefined {
     if (value !== null && typeof value === 'object') {
       const record = value as Record<string, unknown>;
       return (

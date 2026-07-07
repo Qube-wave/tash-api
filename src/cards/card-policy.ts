@@ -21,7 +21,7 @@ export function assertCardRegistrationCanProceed(
     status !== CardRegistrationSessionStatus.Pending &&
     status !== CardRegistrationSessionStatus.Verified
   ) {
-    throw new Error('Card registration session cannot be completed.');
+    throw new Error(`Card registration session cannot proceed from ${status}.`);
   }
 }
 

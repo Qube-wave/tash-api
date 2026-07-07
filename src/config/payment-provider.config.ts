@@ -9,6 +9,7 @@ export interface PaymentProviderConfiguration {
   nombaSubAccountId: string;
   nombaClientId: string;
   nombaPrivateKey: string;
+  nombaEncryptionKey: string;
   nombaCardTokenizationAmount: string;
 }
 
@@ -22,6 +23,7 @@ export default registerAs(
     nombaSubAccountId: process.env.NOMBA_SUB_ACCOUNT_ID ?? '',
     nombaClientId: process.env.NOMBA_CLIENT_ID ?? '',
     nombaPrivateKey: process.env.NOMBA_PRIVATE_KEY ?? '',
+    nombaEncryptionKey: process.env.NOMBA_ENCRYPTION_KEY ?? '',
     nombaCardTokenizationAmount:
       process.env.NOMBA_CARD_TOKENIZATION_AMOUNT ?? '50.00',
   }),

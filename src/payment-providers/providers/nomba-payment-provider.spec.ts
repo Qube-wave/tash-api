@@ -11,6 +11,7 @@ const paymentProviderConfig = {
   nombaSubAccountId: 'sub-account',
   nombaClientId: 'client-id',
   nombaPrivateKey: 'private-key',
+  nombaEncryptionKey: 'encryption-key',
   nombaCardTokenizationAmount: '50.00',
 };
 
@@ -147,15 +148,61 @@ describe('NombaPaymentProvider', () => {
       expect.objectContaining({
         url: '/v1/checkout/checkout-card-detail',
         data: expect.objectContaining({
+          key: 'encryption-key',
           saveCard: true,
           orderReference: 'nomba_order_ref',
-          cardDetails: expect.objectContaining({
+          cardDetails: JSON.stringify({
+            cardCVV: 123,
+            cardExpiryMonth: 12,
             cardExpiryYear: 2030,
-            cardPin: '1234',
+            cardNumber: '4111111111111111',
+            cardPin: 1234,
           }),
         }),
       }),
     );
+  });
+
+  it('reads Nomba transaction id field variants from card details responses', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          status: 'true',
+          responseCode: 'T0',
+          transactionID: 'transaction-id-variant',
+        },
+      },
+    });
+
+    const result = await provider.submitCardDetails({
+      reference: 'nomba_order_ref',
+      cardNumber: '4111111111111111',
+      expiryMonth: '12',
+      expiryYear: '30',
+      cvv: '123',
+    });
+
+    expect(result.metadata.transactionId).toBe('transaction-id-variant');
+  });
+
+  it('rejects OTP submission without a real transaction id', async () => {
+    const { client, provider } = createProvider();
+
+    const result = await provider.submitCardOtp({
+      reference: 'nomba_order_ref',
+      transactionId: 'nomba_order_ref',
+      otp: '123456',
+      phoneNumber: '08012345678',
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason:
+        'Card transaction id is missing. Submit card details again before OTP verification.',
+    });
+    expect(client.request).not.toHaveBeenCalled();
   });
 
   it('submits card OTP and maps a successful verification', async () => {
@@ -246,6 +293,33 @@ describe('NombaPaymentProvider', () => {
         tokenExpirationDate: '12/30',
       },
     });
+  });
+
+  it('surfaces nested Nomba provider error messages', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 400,
+        data: {
+          code: '99',
+          data: {
+            message: 'Invalid card expiry date',
+          },
+        },
+      },
+    });
+    jest.mocked(axios.isAxiosError).mockReturnValueOnce(true);
+
+    await expect(
+      provider.submitCardDetails({
+        reference: 'nomba_order_ref',
+        cardNumber: '4111111111111111',
+        expiryMonth: '12',
+        expiryYear: '30',
+        cvv: '123',
+      }),
+    ).rejects.toThrow('Invalid card expiry date');
   });
 
   it('charges a saved tokenized card', async () => {

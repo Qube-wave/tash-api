@@ -32,7 +32,7 @@ export class CardRegistrationSession {
   @Column({ type: 'varchar', length: 50 })
   provider!: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'text', nullable: true })
   authorizationUrl!: string | null;
 
   @Column({ type: 'enum', enum: CardRegistrationSessionStatus })

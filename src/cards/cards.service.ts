@@ -70,7 +70,7 @@ export class CardsService {
     const provider = this.providerFactory.getProvider();
     const providerSession = await provider.initializeCardRegistration({
       userUuid,
-      email: user.email,
+      email: dto.email?.trim().toLowerCase() ?? user.email,
       phoneNumber: user.phoneNumber,
     });
 
