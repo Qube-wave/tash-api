@@ -105,6 +105,43 @@ describe('NombaPaymentProvider', () => {
     });
   });
 
+  it('resolves a bank account with Nomba lookup', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          accountNumber: '0554772814',
+          accountName: 'M.A Animashaun',
+        },
+      },
+    });
+
+    const result = await provider.resolveBankAccount({
+      bankCode: '053',
+      accountNumber: '0554772814',
+    });
+
+    expect(result).toEqual({
+      bankCode: '053',
+      accountNumber: '0554772814',
+      accountName: 'M.A Animashaun',
+      bankName: undefined,
+    });
+    expect(client.request).toHaveBeenCalledWith({
+      method: 'POST',
+      url: '/v1/transfers/bank/lookup',
+      data: {
+        accountNumber: '0554772814',
+        bankCode: '053',
+      },
+      headers: {
+        Authorization: 'Bearer nomba-access-token',
+        accountId: 'parent-account',
+      },
+    });
+  });
+
   it('creates a tokenized card checkout order', async () => {
     const { client, provider } = createProvider();
     client.request.mockResolvedValueOnce({

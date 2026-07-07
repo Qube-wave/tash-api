@@ -108,6 +108,12 @@ interface NombaBank {
   currency?: unknown;
 }
 
+interface NombaBankAccountLookupData {
+  accountNumber?: unknown;
+  accountName?: unknown;
+  bankName?: unknown;
+}
+
 interface NombaWebhookPayload {
   event_type?: unknown;
   eventType?: unknown;
@@ -600,11 +606,41 @@ export class NombaPaymentProvider implements PaymentProvider {
     return this.readNombaBanks(data);
   }
 
-  resolveBankAccount(
+  async resolveBankAccount(
     input: ResolveBankAccountInput,
   ): Promise<ProviderBankAccount> {
-    void input;
-    return Promise.reject(this.notImplemented('resolveBankAccount'));
+    const response = await this.request<
+      NombaEnvelope<NombaBankAccountLookupData>
+    >({
+      method: 'POST',
+      url: '/v1/transfers/bank/lookup',
+      accountScoped: true,
+      data: {
+        accountNumber: input.accountNumber,
+        bankCode: input.bankCode,
+      },
+    });
+    const data = this.assertSuccessfulEnvelope(
+      response.data,
+      'Bank account lookup failed.',
+    );
+    const accountName = this.readString(data.accountName);
+
+    if (accountName === undefined) {
+      throw new AppException(
+        ErrorCode.InvalidRecipient,
+        'Bank account lookup did not return an account name.',
+        HttpStatus.BAD_GATEWAY,
+        this.safeProviderMetadata(data),
+      );
+    }
+
+    return {
+      bankCode: input.bankCode,
+      accountNumber: this.readString(data.accountNumber) ?? input.accountNumber,
+      accountName,
+      bankName: this.readString(data.bankName),
+    };
   }
 
   sendBankTransfer(
