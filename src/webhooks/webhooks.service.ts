@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
+import { PaymentProviderName } from '../config/payment-provider.config';
+import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
 import {
   TransactionDirection,
   TransactionStatus,
@@ -26,11 +28,15 @@ import {
 export interface WebhookProcessingResponse {
   accepted: true;
   duplicate: boolean;
+  providerEventId?: string;
+  eventType?: string;
   transactionReference?: string;
 }
 
 @Injectable()
 export class WebhooksService {
+  private readonly logger = new Logger(WebhooksService.name);
+
   constructor(
     @InjectRepository(WebhookEvent)
     private readonly webhookEventsRepository: Repository<WebhookEvent>,
@@ -38,7 +44,70 @@ export class WebhooksService {
     private readonly virtualAccountsService: VirtualAccountsService,
     private readonly walletsService: WalletsService,
     private readonly transactionsService: TransactionsService,
+    private readonly providerFactory: PaymentProviderFactory,
   ) {}
+
+  async processProviderWebhook(input: {
+    providerName: PaymentProviderName;
+    headers: Record<string, string | string[] | undefined>;
+    rawBody: Buffer;
+    payload: unknown;
+  }): Promise<WebhookProcessingResponse> {
+    const provider = this.providerFactory.getProviderByName(input.providerName);
+    const verified = await provider.verifyWebhook(input.headers, input.rawBody);
+
+    if (!verified) {
+      throw new AppException(
+        ErrorCode.InvalidWebhookSignature,
+        'Invalid webhook signature.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const event = await provider.parseWebhook(input.payload);
+    const existing = await this.webhookEventsRepository.findOne({
+      where: {
+        provider: event.provider,
+        providerEventId: event.providerEventId,
+      },
+    });
+
+    if (existing !== null) {
+      return {
+        accepted: true,
+        duplicate: true,
+        providerEventId: event.providerEventId,
+        eventType: event.eventType,
+      };
+    }
+
+    await this.webhookEventsRepository.save(
+      this.webhookEventsRepository.create({
+        provider: event.provider,
+        providerEventId: event.providerEventId,
+        eventType: event.eventType,
+        signature: this.readHeader(input.headers, `${event.provider}-signature`),
+        payload: event.payload,
+        status: WebhookEventStatus.Received,
+        processingAttempts: 0,
+        lastError: null,
+        processedAt: null,
+      }),
+    );
+
+    this.logger.log('Payment provider webhook accepted', {
+      provider: event.provider,
+      providerEventId: event.providerEventId,
+      eventType: event.eventType,
+    });
+
+    return {
+      accepted: true,
+      duplicate: false,
+      providerEventId: event.providerEventId,
+      eventType: event.eventType,
+    };
+  }
 
   async processMockVirtualAccountFunding(
     dto: MockVirtualAccountFundingWebhookDto,
@@ -151,5 +220,18 @@ export class WebhooksService {
       await manager.save(WalletLedgerEntry, ledgerEntry);
       return savedTransaction.reference;
     });
+  }
+
+  private readHeader(
+    headers: Record<string, string | string[] | undefined>,
+    name: string,
+  ): string | null {
+    const value = headers[name] ?? headers[name.toLowerCase()];
+
+    if (Array.isArray(value)) {
+      return value[0] ?? null;
+    }
+
+    return value ?? null;
   }
 }

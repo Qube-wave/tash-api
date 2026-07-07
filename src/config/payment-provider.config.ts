@@ -10,6 +10,7 @@ export interface PaymentProviderConfiguration {
   nombaClientId: string;
   nombaPrivateKey: string;
   nombaEncryptionKey: string;
+  nombaWebhookSignatureKey: string;
   nombaCardTokenizationAmount: string;
 }
 
@@ -24,6 +25,7 @@ export default registerAs(
     nombaClientId: process.env.NOMBA_CLIENT_ID ?? '',
     nombaPrivateKey: process.env.NOMBA_PRIVATE_KEY ?? '',
     nombaEncryptionKey: process.env.NOMBA_ENCRYPTION_KEY ?? '',
+    nombaWebhookSignatureKey: process.env.NOMBA_WEBHOOK_SIGNATURE_KEY ?? '',
     nombaCardTokenizationAmount:
       process.env.NOMBA_CARD_TOKENIZATION_AMOUNT ?? '50.00',
   }),

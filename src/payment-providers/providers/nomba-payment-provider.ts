@@ -1,4 +1,9 @@
-import { randomUUID } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto';
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
@@ -89,6 +94,23 @@ interface NombaTokenizedChargeData {
   message?: unknown;
   transactionId?: unknown;
   orderReference?: unknown;
+}
+
+interface NombaWebhookPayload {
+  event_type?: unknown;
+  eventType?: unknown;
+  requestId?: unknown;
+  eventId?: unknown;
+  merchant?: {
+    userId?: unknown;
+    walletId?: unknown;
+  };
+  transaction?: {
+    transactionId?: unknown;
+    type?: unknown;
+    time?: unknown;
+    responseCode?: unknown;
+  };
 }
 
 interface CachedNombaToken {
@@ -519,18 +541,63 @@ export class NombaPaymentProvider implements PaymentProvider {
     return Promise.reject(this.notImplemented('verifyTransaction'));
   }
 
-  verifyWebhook(
+  async verifyWebhook(
     headers: Record<string, string | string[] | undefined>,
     rawBody: Buffer,
   ): Promise<boolean> {
-    void headers;
-    void rawBody;
-    return Promise.reject(this.notImplemented('verifyWebhook'));
+    const signature = this.readHeader(headers, 'nomba-signature');
+    const signatureValue = this.readHeader(headers, 'nomba-sig-value');
+    const timestamp = this.readHeader(headers, 'nomba-timestamp');
+    const algorithm = this.readHeader(headers, 'nomba-signature-algorithm');
+    const config = this.getPaymentConfig();
+
+    if (
+      config.nombaWebhookSignatureKey.trim() === '' ||
+      signature === undefined ||
+      timestamp === undefined
+    ) {
+      return false;
+    }
+
+    if (
+      algorithm !== undefined &&
+      algorithm.trim().toLowerCase() !== 'hmacsha256'
+    ) {
+      return false;
+    }
+
+    const payload = this.parseWebhookBody(rawBody);
+    const signedPayload =
+      signatureValue ?? this.buildWebhookSignaturePayload(payload, timestamp);
+    const expectedSignature = createHmac(
+      'sha256',
+      config.nombaWebhookSignatureKey,
+    )
+      .update(signedPayload)
+      .digest('base64');
+
+    return this.constantTimeEquals(signature, expectedSignature);
   }
 
-  parseWebhook(payload: unknown): Promise<NormalizedWebhookEvent> {
-    void payload;
-    return Promise.reject(this.notImplemented('parseWebhook'));
+  async parseWebhook(payload: unknown): Promise<NormalizedWebhookEvent> {
+    const record = this.asRecord(payload);
+    const transaction = this.asRecord(record.transaction);
+    const eventType =
+      this.readString(record.event_type) ??
+      this.readString(record.eventType) ??
+      'nomba.webhook';
+    const providerEventId =
+      this.readString(record.requestId) ??
+      this.readString(record.eventId) ??
+      this.readString(transaction.transactionId) ??
+      this.hashWebhookPayload(record);
+
+    return {
+      provider: 'nomba',
+      providerEventId,
+      eventType,
+      payload: record,
+    };
   }
 
   private async request<T>({
@@ -666,6 +733,72 @@ export class NombaPaymentProvider implements PaymentProvider {
     }
 
     return {};
+  }
+
+  private parseWebhookBody(rawBody: Buffer): NombaWebhookPayload {
+    try {
+      const parsed = JSON.parse(rawBody.toString('utf8')) as unknown;
+      return this.asRecord(parsed) as NombaWebhookPayload;
+    } catch {
+      return {};
+    }
+  }
+
+  private buildWebhookSignaturePayload(
+    payload: NombaWebhookPayload,
+    timestamp: string,
+  ): string {
+    const merchant = this.asRecord(payload.merchant);
+    const transaction = this.asRecord(payload.transaction);
+    const responseCode = transaction.responseCode;
+
+    return [
+      this.readString(payload.event_type) ??
+        this.readString(payload.eventType) ??
+        '',
+      this.readString(payload.requestId) ?? '',
+      this.readString(merchant.userId) ?? '',
+      this.readString(merchant.walletId) ?? '',
+      this.readString(transaction.transactionId) ?? '',
+      this.readString(transaction.type) ?? '',
+      this.readString(transaction.time) ?? '',
+      responseCode === null ? '' : this.readString(responseCode) ?? '',
+      timestamp,
+    ].join(':');
+  }
+
+  private readHeader(
+    headers: Record<string, string | string[] | undefined>,
+    name: string,
+  ): string | undefined {
+    const value = headers[name] ?? headers[name.toLowerCase()];
+    return Array.isArray(value)
+      ? this.readString(value[0])
+      : this.readString(value);
+  }
+
+  private constantTimeEquals(actual: string, expected: string): boolean {
+    const actualBuffer = Buffer.from(actual);
+    const expectedBuffer = Buffer.from(expected);
+
+    if (actualBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+
+    return timingSafeEqual(actualBuffer, expectedBuffer);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> {
+    return value !== null && typeof value === 'object'
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  private hashWebhookPayload(payload: Record<string, unknown>): string {
+    return createHash('sha256')
+      .update(JSON.stringify(payload))
+      .digest('hex')
+      .slice(0, 64);
   }
 
   private readTokenizedCards(value: unknown): NombaTokenizedCard[] {

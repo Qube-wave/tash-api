@@ -38,6 +38,7 @@ export interface EnvironmentVariables {
   NOMBA_CLIENT_ID: string;
   NOMBA_PRIVATE_KEY: string;
   NOMBA_ENCRYPTION_KEY: string;
+  NOMBA_WEBHOOK_SIGNATURE_KEY: string;
   NOMBA_CARD_TOKENIZATION_AMOUNT: string;
 }
 
@@ -204,6 +205,11 @@ export function validateEnvironment(
   const nombaClientId = readString(config, 'NOMBA_CLIENT_ID', '');
   const nombaPrivateKey = readString(config, 'NOMBA_PRIVATE_KEY', '');
   const nombaEncryptionKey = readString(config, 'NOMBA_ENCRYPTION_KEY', '');
+  const nombaWebhookSignatureKey = readString(
+    config,
+    'NOMBA_WEBHOOK_SIGNATURE_KEY',
+    '',
+  );
   const nombaCardTokenizationAmount = readPositiveAmountString(
     config,
     'NOMBA_CARD_TOKENIZATION_AMOUNT',
@@ -260,7 +266,8 @@ export function validateEnvironment(
       nombaSubAccountId === '' ||
       nombaClientId === '' ||
       nombaPrivateKey === '' ||
-      nombaEncryptionKey === ''
+      nombaEncryptionKey === '' ||
+      nombaWebhookSignatureKey === ''
     ) {
       throw new Error('Nomba environment must be configured from production');
     }
@@ -332,6 +339,7 @@ export function validateEnvironment(
     NOMBA_CLIENT_ID: nombaClientId,
     NOMBA_PRIVATE_KEY: nombaPrivateKey,
     NOMBA_ENCRYPTION_KEY: nombaEncryptionKey,
+    NOMBA_WEBHOOK_SIGNATURE_KEY: nombaWebhookSignatureKey,
     NOMBA_CARD_TOKENIZATION_AMOUNT: nombaCardTokenizationAmount,
   };
 }

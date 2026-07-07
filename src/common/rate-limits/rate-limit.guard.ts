@@ -1,9 +1,11 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthenticatedUser } from '../auth/authenticated-user';
 import { AppException } from '../errors/app.exception';
 import { ErrorCode } from '../errors/error-code';
 import { selectRateLimitRule } from './rate-limit-policy';
+import { SKIP_RATE_LIMIT_KEY } from './skip-rate-limit.decorator';
 
 interface RateLimitRecord {
   count: number;
@@ -18,7 +20,18 @@ interface AuthenticatedRequest extends Request {
 export class RateLimitGuard implements CanActivate {
   private readonly records = new Map<string, RateLimitRecord>();
 
+  constructor(private readonly reflector: Reflector) {}
+
   canActivate(context: ExecutionContext): boolean {
+    const skipRateLimit = this.reflector.getAllAndOverride<boolean>(
+      SKIP_RATE_LIMIT_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (skipRateLimit === true) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const rule = selectRateLimitRule(
       request.method,

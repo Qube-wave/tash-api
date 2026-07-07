@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import axios, { AxiosInstance } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { NombaPaymentProvider } from './nomba-payment-provider';
@@ -12,6 +13,7 @@ const paymentProviderConfig = {
   nombaClientId: 'client-id',
   nombaPrivateKey: 'private-key',
   nombaEncryptionKey: 'encryption-key',
+  nombaWebhookSignatureKey: 'webhook-signature-key',
   nombaCardTokenizationAmount: '50.00',
 };
 
@@ -58,6 +60,48 @@ function createProvider() {
 describe('NombaPaymentProvider', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('verifies and parses Nomba webhook signatures', async () => {
+    const { provider } = createProvider();
+    const payload = {
+      event_type: 'payment_success',
+      requestId: 'request-123',
+      merchant: {
+        userId: 'merchant-user',
+        walletId: 'merchant-wallet',
+      },
+      transaction: {
+        transactionId: 'transaction-123',
+        type: 'card',
+        time: '2026-07-07T07:30:00.000Z',
+        responseCode: '00',
+      },
+    };
+    const timestamp = '2026-07-07T07:30:01.000Z';
+    const signaturePayload =
+      'payment_success:request-123:merchant-user:merchant-wallet:transaction-123:card:2026-07-07T07:30:00.000Z:00:2026-07-07T07:30:01.000Z';
+    const signature = createHmac('sha256', 'webhook-signature-key')
+      .update(signaturePayload)
+      .digest('base64');
+
+    await expect(
+      provider.verifyWebhook(
+        {
+          'nomba-signature': signature,
+          'nomba-signature-algorithm': 'HmacSHA256',
+          'nomba-sig-value': signaturePayload,
+          'nomba-timestamp': timestamp,
+        },
+        Buffer.from(JSON.stringify(payload)),
+      ),
+    ).resolves.toBe(true);
+
+    await expect(provider.parseWebhook(payload)).resolves.toMatchObject({
+      provider: 'nomba',
+      providerEventId: 'request-123',
+      eventType: 'payment_success',
+    });
   });
 
   it('creates a tokenized card checkout order', async () => {
