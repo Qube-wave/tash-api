@@ -323,6 +323,29 @@ export class UsersService {
     await this.usersRepository.save(user);
   }
 
+  async updateEmail(userId: number, email: string): Promise<PublicUserProfile> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    const existing = await this.usersRepository.findOne({
+      where: { email: normalizedEmail },
+    });
+
+    if (existing !== null && existing.id !== user.id) {
+      throw new ConflictException('A user with this email already exists.');
+    }
+
+    user.email = normalizedEmail;
+    user.emailVerifiedAt = new Date();
+    await this.usersRepository.save(user);
+
+    return this.getPublicProfile(user.uuid);
+  }
+
   private async ensureUniqueIdentity({
     email,
     phoneNumber,

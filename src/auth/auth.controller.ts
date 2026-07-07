@@ -1,6 +1,7 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
+import type { PublicUserProfile } from '../users/users.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import {
@@ -100,6 +101,26 @@ export class AuthController {
     @Body() dto: CompleteEmailVerificationDto,
   ): Promise<AuthResponse> {
     return this.authService.completeLoginEmailVerification(dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('me/email/send-verification')
+  sendAccountEmailVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    return this.authService.sendAccountEmailVerification(user.id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('me/email/complete-verification')
+  completeAccountEmailVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CompleteEmailVerificationDto,
+  ): Promise<PublicUserProfile> {
+    return this.authService.completeAccountEmailVerification(user.id, dto);
   }
 
   @Post('refresh')

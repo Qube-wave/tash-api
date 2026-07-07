@@ -335,6 +335,64 @@ export class AuthService {
     return this.buildAuthResponse(user);
   }
 
+  async sendAccountEmailVerification(
+    userId: number,
+    dto: VerifyEmailDto,
+  ): Promise<{ message: string }> {
+    const email = this.normalizeEmail(dto.email);
+    const user = await this.usersService.findById(userId);
+
+    if (user === null) {
+      throw this.invalidCredentials();
+    }
+
+    const existingUser = await this.usersService.findByEmail(email);
+    if (existingUser !== null && existingUser.id !== user.id) {
+      throw new BadRequestException('Email is already in use.');
+    }
+
+    if (user.email === email && user.emailVerifiedAt !== null) {
+      return {
+        message: 'Email is already verified',
+      };
+    }
+
+    const token = await this.createAccountEmailVerificationToken(
+      user.id,
+      email,
+    );
+
+    await this.notificationService.enqueueOtpEmailNotification({
+      email,
+      attempts: 5,
+      length: 6,
+      otp: token,
+      ttl: 15,
+    });
+
+    return {
+      message: 'A verification code has been sent to your email',
+    };
+  }
+
+  async completeAccountEmailVerification(
+    userId: number,
+    dto: CompleteEmailVerificationDto,
+  ): Promise<PublicUserProfile> {
+    const email = this.normalizeEmail(dto.email);
+
+    await this.consumeVerificationToken(
+      VerificationTokenType.Email,
+      dto.token,
+      {
+        userId,
+        email,
+      },
+    );
+
+    return this.usersService.updateEmail(userId, email);
+  }
+
   async refresh(dto: RefreshTokenDto): Promise<AuthTokens> {
     const { stored, user } = await this.validateRefreshToken(dto.refreshToken);
     const replacement = await this.issueTokens(user);
@@ -586,6 +644,41 @@ export class AuthService {
     });
   }
 
+  private async createAccountEmailVerificationToken(
+    userId: number,
+    email: string,
+    maxAttempts = 5,
+  ): Promise<string> {
+    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+    const token = String(Math.floor(100000 + Math.random() * 900000));
+
+    return this.dataSource.transaction(async (manager) => {
+      await manager.delete(VerificationToken, {
+        userId,
+        type: VerificationTokenType.Email,
+      });
+
+      await manager.save(
+        VerificationToken,
+        manager.create(VerificationToken, {
+          tokenId: randomUUID(),
+          userId,
+          email,
+          type: VerificationTokenType.Email,
+          attempts: 0,
+          maxAttempts,
+          tokenHash: await this.hashService.hash(token),
+          expiresAt: new Date(
+            Date.now() + auth.verificationTokenTtlSeconds * 1000,
+          ),
+          consumedAt: null,
+        }),
+      );
+
+      return token;
+    });
+  }
+
   private async consumeVerificationToken(
     type: VerificationTokenType,
     tokenValue: string,
@@ -633,6 +726,10 @@ export class AuthService {
       throw new BadRequestException('OTP has expired');
     }
 
+    if (token.consumedAt !== null) {
+      throw new BadRequestException('Invalid OTP');
+    }
+
     if (token.attempts >= token.maxAttempts) {
       throw new BadRequestException('OTP attempts exceeded');
     }
@@ -651,6 +748,10 @@ export class AuthService {
     token.attempts += 1;
     token.consumedAt = now;
     await this.verificationTokensRepository.save(token);
+  }
+
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
   }
 
   private assertCanSendLoginOtp(user: User | null): asserts user is User {
