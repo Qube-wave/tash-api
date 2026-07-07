@@ -32,6 +32,10 @@ export interface EnvironmentVariables {
   SKIP_EXTERNAL_CONNECTIONS: boolean;
   RESEND_API_KEY: string;
   RESEND_FROM_EMAIL: string;
+  NOMBA_PARENT_ACCOUNT_ID: string;
+  NOMBA_SUB_ACCOUNT_ID: string;
+  NOMBA_CLIENT_ID: string;
+  NOMBA_PRIVATE_KEY: string;
 }
 
 const VALID_NODE_ENVIRONMENTS: readonly NodeEnvironment[] = [
@@ -166,6 +170,14 @@ export function validateEnvironment(
     'AFRICAS_TALKING_USERNAME',
     '',
   );
+  const nombaParentAccountId = readString(
+    config,
+    'NOMBA_PARENT_ACCOUNT_ID',
+    '',
+  );
+  const nombaSubAccountId = readString(config, 'NOMBA_SUB_ACCOUNT_ID', '');
+  const nombaClientId = readString(config, 'NOMBA_CLIENT_ID', '');
+  const nombaPrivateKey = readString(config, 'NOMBA_PRIVATE_KEY', '');
 
   const resendApiKey = readString(config, 'RESEND_API_KEY', '');
   const resendFromEmail = readString(config, 'RESEND_FROM_EMAIL', '');
@@ -209,6 +221,15 @@ export function validateEnvironment(
       throw new Error(
         'AFRICAS_TALKING_USERNAME must be configured for production',
       );
+    }
+
+    if (
+      nombaParentAccountId === '' ||
+      nombaSubAccountId === '' ||
+      nombaClientId === '' ||
+      nombaPrivateKey === ''
+    ) {
+      throw new Error('Nomba environment must be configured from production');
     }
   }
 
@@ -272,5 +293,9 @@ export function validateEnvironment(
     ),
     RESEND_API_KEY: resendApiKey,
     RESEND_FROM_EMAIL: resendFromEmail,
+    NOMBA_PARENT_ACCOUNT_ID: nombaParentAccountId,
+    NOMBA_SUB_ACCOUNT_ID: nombaSubAccountId,
+    NOMBA_CLIENT_ID: nombaClientId,
+    NOMBA_PRIVATE_KEY: nombaPrivateKey,
   };
 }

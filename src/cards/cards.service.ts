@@ -11,7 +11,11 @@ import {
   assertCardChargeable,
   assertCardRegistrationCanComplete,
 } from './card-policy';
-import { CreateCardRegistrationSessionDto } from './dto/card-registration.dto';
+import {
+  CreateCardRegistrationSessionDto,
+  SubmitCardDetailsDto,
+  SubmitCardOtpDto,
+} from './dto/card-registration.dto';
 import {
   CardRegistrationSession,
   CardRegistrationSessionStatus,
@@ -40,6 +44,7 @@ export interface CardRegistrationSessionResponse {
   authorizationUrl: string | null;
   expiresAt: Date;
   metadata: Record<string, unknown>;
+  failureReason: string | null;
 }
 
 @Injectable()
@@ -89,72 +94,104 @@ export class CardsService {
     return this.toSessionResponse(session);
   }
 
-  async completeRegistrationSession(
+  async submitRegistrationCardDetails(
     userUuid: string,
     reference: string,
-  ): Promise<CardResponse> {
-    const user = await this.usersService.getByUuid(userUuid);
-    const session = await this.sessionsRepository.findOne({
-      where: { userId: user.id, reference },
+    dto: SubmitCardDetailsDto,
+  ): Promise<CardRegistrationSessionResponse> {
+    const { session } = await this.getCompletableRegistrationSession(
+      userUuid,
+      reference,
+    );
+    const provider = this.providerFactory.getProvider();
+    const result = await provider.submitCardDetails({
+      reference,
+      cardNumber: dto.cardNumber,
+      expiryMonth: dto.expiryMonth,
+      expiryYear: dto.expiryYear,
+      cvv: dto.cvv,
+      cardholderName: dto.cardholderName,
     });
 
-    if (session === null) {
-      throw new NotFoundException('Card registration session was not found.');
-    }
+    session.authorizationUrl =
+      result.authorizationUrl ?? session.authorizationUrl;
+    session.metadata = {
+      ...session.metadata,
+      ...result.metadata,
+      cardDetailsSubmittedAt: new Date().toISOString(),
+    };
 
-    try {
-      assertCardRegistrationCanComplete(
-        session.status,
-        session.expiresAt,
-        new Date(),
-      );
-    } catch (error) {
+    if (result.status === 'failed') {
+      session.status = CardRegistrationSessionStatus.Failed;
+      session.failureReason =
+        result.failureReason ?? 'Card registration failed.';
+      await this.sessionsRepository.save(session);
       throw new AppException(
         ErrorCode.CardRegistrationFailed,
-        error instanceof Error
-          ? error.message
-          : 'Card registration session cannot be completed.',
+        session.failureReason,
         400,
       );
     }
 
-    const provider = this.providerFactory.getProvider();
-    const providerCard = await provider.completeCardRegistration({ reference });
-    const firstCard = await this.cardsRepository.count({
-      where: { userId: user.id },
-    });
-    const currency = this.readSessionCurrency(session);
-    const card = await this.cardsRepository.save(
-      this.cardsRepository.create({
-        userId: user.id,
-        provider: providerCard.provider,
-        providerCustomerId: providerCard.providerCustomerId,
-        providerCardToken: providerCard.providerCardToken,
-        authorizationReference: providerCard.authorizationReference,
-        brand: providerCard.brand,
-        lastFourDigits: providerCard.lastFourDigits,
-        expiryMonth: providerCard.expiryMonth,
-        expiryYear: providerCard.expiryYear,
-        cardholderName: null,
-        bankName: null,
-        country: null,
-        currency,
-        isDefault: firstCard === 0,
-        status: CardStatus.Active,
-        lastChargedAt: null,
-        metadata: providerCard.metadata,
-      }),
-    );
-
-    session.status = CardRegistrationSessionStatus.Completed;
-    session.cardId = card.id;
+    session.status = CardRegistrationSessionStatus.Pending;
+    session.failureReason = null;
     await this.sessionsRepository.save(session);
+    return this.toSessionResponse(session);
+  }
 
-    if (card.isDefault) {
-      await this.settingsService.setDefaultCard(user.id, card.id);
+  async submitRegistrationCardOtp(
+    userUuid: string,
+    reference: string,
+    dto: SubmitCardOtpDto,
+  ): Promise<CardResponse> {
+    const { user, session } = await this.getCompletableRegistrationSession(
+      userUuid,
+      reference,
+    );
+    const provider = this.providerFactory.getProvider();
+    const result = await provider.submitCardOtp({ reference, otp: dto.otp });
+
+    session.metadata = {
+      ...session.metadata,
+      ...result.metadata,
+      cardOtpSubmittedAt: new Date().toISOString(),
+    };
+
+    if (result.status === 'failed') {
+      session.status = CardRegistrationSessionStatus.Failed;
+      session.failureReason =
+        result.failureReason ?? 'Card registration failed.';
+      await this.sessionsRepository.save(session);
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        session.failureReason,
+        400,
+      );
     }
 
-    return this.toResponse(card);
+    if (result.status !== 'successful') {
+      session.status = CardRegistrationSessionStatus.Pending;
+      await this.sessionsRepository.save(session);
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        'Card registration is still pending.',
+        400,
+      );
+    }
+
+    return this.saveCompletedRegistrationCard(user, session);
+  }
+
+  async completeRegistrationSession(
+    userUuid: string,
+    reference: string,
+  ): Promise<CardResponse> {
+    const { user, session } = await this.getCompletableRegistrationSession(
+      userUuid,
+      reference,
+    );
+
+    return this.saveCompletedRegistrationCard(user, session);
   }
 
   async listForUser(userId: number): Promise<CardResponse[]> {
@@ -250,6 +287,87 @@ export class CardsService {
     };
   }
 
+  private async getCompletableRegistrationSession(
+    userUuid: string,
+    reference: string,
+  ): Promise<{
+    user: Awaited<ReturnType<UsersService['getByUuid']>>;
+    session: CardRegistrationSession;
+  }> {
+    const user = await this.usersService.getByUuid(userUuid);
+    const session = await this.sessionsRepository.findOne({
+      where: { userId: user.id, reference },
+    });
+
+    if (session === null) {
+      throw new NotFoundException('Card registration session was not found.');
+    }
+
+    try {
+      assertCardRegistrationCanComplete(
+        session.status,
+        session.expiresAt,
+        new Date(),
+      );
+    } catch (error) {
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        error instanceof Error
+          ? error.message
+          : 'Card registration session cannot be completed.',
+        400,
+      );
+    }
+
+    return { user, session };
+  }
+
+  private async saveCompletedRegistrationCard(
+    user: Awaited<ReturnType<UsersService['getByUuid']>>,
+    session: CardRegistrationSession,
+  ): Promise<CardResponse> {
+    const provider = this.providerFactory.getProvider();
+    const providerCard = await provider.completeCardRegistration({
+      reference: session.reference,
+    });
+    const firstCard = await this.cardsRepository.count({
+      where: { userId: user.id },
+    });
+    const currency = this.readSessionCurrency(session);
+    const card = await this.cardsRepository.save(
+      this.cardsRepository.create({
+        userId: user.id,
+        provider: providerCard.provider,
+        providerCustomerId: providerCard.providerCustomerId,
+        providerCardToken: providerCard.providerCardToken,
+        authorizationReference: providerCard.authorizationReference,
+        brand: providerCard.brand,
+        lastFourDigits: providerCard.lastFourDigits,
+        expiryMonth: providerCard.expiryMonth,
+        expiryYear: providerCard.expiryYear,
+        cardholderName: null,
+        bankName: null,
+        country: null,
+        currency,
+        isDefault: firstCard === 0,
+        status: CardStatus.Active,
+        lastChargedAt: null,
+        metadata: providerCard.metadata,
+      }),
+    );
+
+    session.status = CardRegistrationSessionStatus.Completed;
+    session.cardId = card.id;
+    session.failureReason = null;
+    await this.sessionsRepository.save(session);
+
+    if (card.isDefault) {
+      await this.settingsService.setDefaultCard(user.id, card.id);
+    }
+
+    return this.toResponse(card);
+  }
+
   private toSessionResponse(
     session: CardRegistrationSession,
   ): CardRegistrationSessionResponse {
@@ -259,6 +377,7 @@ export class CardsService {
       authorizationUrl: session.authorizationUrl,
       expiresAt: session.expiresAt,
       metadata: session.metadata,
+      failureReason: session.failureReason,
     };
   }
 

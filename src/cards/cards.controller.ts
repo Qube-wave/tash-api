@@ -20,6 +20,8 @@ import {
 import {
   CompleteCardRegistrationDto,
   CreateCardRegistrationSessionDto,
+  SubmitCardDetailsDto,
+  SubmitCardOtpDto,
 } from './dto/card-registration.dto';
 
 @ApiTags('cards')
@@ -35,6 +37,32 @@ export class CardsController {
     @Body() dto: CreateCardRegistrationSessionDto,
   ): Promise<CardRegistrationSessionResponse> {
     return this.cardsService.createRegistrationSession(user.uuid, dto);
+  }
+
+  @Post('registration-sessions/:reference/card')
+  submitRegistrationCardDetails(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reference') reference: string,
+    @Body() dto: SubmitCardDetailsDto,
+  ): Promise<CardRegistrationSessionResponse> {
+    return this.cardsService.submitRegistrationCardDetails(
+      user.uuid,
+      reference,
+      dto,
+    );
+  }
+
+  @Post('registration-sessions/:reference/otp')
+  submitRegistrationCardOtp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reference') reference: string,
+    @Body() dto: SubmitCardOtpDto,
+  ): Promise<CardResponse> {
+    return this.cardsService.submitRegistrationCardOtp(
+      user.uuid,
+      reference,
+      dto,
+    );
   }
 
   @Post('registration-sessions/:reference/complete')

@@ -4,6 +4,7 @@ import {
   ChargeDirectDebitMandateInput,
   ChargeSavedCardInput,
   CompleteCardRegistrationInput,
+  ProviderCardRegistrationStep,
   CreateDirectDebitMandateInput,
   CreateProviderCustomerInput,
   CreateVirtualAccountInput,
@@ -24,6 +25,8 @@ import {
   RefundPaymentInput,
   ResolveBankAccountInput,
   SendBankTransferInput,
+  SubmitCardDetailsInput,
+  SubmitCardOtpInput,
   VerifyBvnInput,
 } from '../interfaces/payment-provider.interface';
 
@@ -66,6 +69,34 @@ export class MockPaymentProvider implements PaymentProvider {
     return Promise.resolve({
       provider: 'mock',
       reference: 'mock_card_session',
+      metadata: sandboxMetadata,
+    });
+  }
+
+  submitCardDetails(
+    input: SubmitCardDetailsInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    void input;
+    return Promise.resolve({
+      provider: 'mock',
+      reference: 'mock_card_session',
+      status: 'requires_otp',
+      metadata: {
+        ...sandboxMetadata,
+        nextAction: 'submit_otp',
+      },
+    });
+  }
+
+  submitCardOtp(
+    input: SubmitCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    return Promise.resolve({
+      provider: 'mock',
+      reference: input.reference,
+      status: input.otp === '000000' ? 'failed' : 'successful',
+      failureReason:
+        input.otp === '000000' ? 'Mock card OTP failed.' : undefined,
       metadata: sandboxMetadata,
     });
   }

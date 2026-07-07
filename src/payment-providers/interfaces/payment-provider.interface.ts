@@ -47,8 +47,34 @@ export interface ProviderCardRegistrationSession {
   metadata: Record<string, unknown>;
 }
 
+export interface SubmitCardDetailsInput {
+  reference: string;
+  cardNumber: string;
+  expiryMonth: string;
+  expiryYear: string;
+  cvv: string;
+  cardholderName?: string;
+}
+
+export interface SubmitCardOtpInput {
+  reference: string;
+  otp: string;
+}
+
 export interface CompleteCardRegistrationInput {
   reference: string;
+}
+
+export type ProviderCardRegistrationStepStatus =
+  'pending' | 'requires_otp' | 'successful' | 'failed';
+
+export interface ProviderCardRegistrationStep {
+  provider: string;
+  reference: string;
+  status: ProviderCardRegistrationStepStatus;
+  authorizationUrl?: string;
+  failureReason?: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface ProviderCard {
@@ -204,6 +230,12 @@ export interface PaymentProvider {
   initializeCardRegistration(
     input: InitializeCardRegistrationInput,
   ): Promise<ProviderCardRegistrationSession>;
+  submitCardDetails(
+    input: SubmitCardDetailsInput,
+  ): Promise<ProviderCardRegistrationStep>;
+  submitCardOtp(
+    input: SubmitCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep>;
   completeCardRegistration(
     input: CompleteCardRegistrationInput,
   ): Promise<ProviderCard>;

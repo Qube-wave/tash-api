@@ -6,6 +6,7 @@ import {
   ChargeDirectDebitMandateInput,
   ChargeSavedCardInput,
   CompleteCardRegistrationInput,
+  ProviderCardRegistrationStep,
   CreateDirectDebitMandateInput,
   CreateProviderCustomerInput,
   CreateVirtualAccountInput,
@@ -26,6 +27,8 @@ import {
   RefundPaymentInput,
   ResolveBankAccountInput,
   SendBankTransferInput,
+  SubmitCardDetailsInput,
+  SubmitCardOtpInput,
   VerifyBvnInput,
 } from '../interfaces/payment-provider.interface';
 
@@ -50,6 +53,20 @@ export class NombaPaymentProvider implements PaymentProvider {
     void input;
     // TODO: Implement with Nomba tokenized card/checkout documentation.
     return Promise.reject(this.notImplemented('initializeCardRegistration'));
+  }
+
+  submitCardDetails(
+    input: SubmitCardDetailsInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    void input;
+    return Promise.reject(this.notImplemented('submitCardDetails'));
+  }
+
+  submitCardOtp(
+    input: SubmitCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    void input;
+    return Promise.reject(this.notImplemented('submitCardOtp'));
   }
 
   completeCardRegistration(
