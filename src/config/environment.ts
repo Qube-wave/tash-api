@@ -32,10 +32,12 @@ export interface EnvironmentVariables {
   SKIP_EXTERNAL_CONNECTIONS: boolean;
   RESEND_API_KEY: string;
   RESEND_FROM_EMAIL: string;
+  NOMBA_BASE_URL: string;
   NOMBA_PARENT_ACCOUNT_ID: string;
   NOMBA_SUB_ACCOUNT_ID: string;
   NOMBA_CLIENT_ID: string;
   NOMBA_PRIVATE_KEY: string;
+  NOMBA_CARD_TOKENIZATION_AMOUNT: string;
 }
 
 const VALID_NODE_ENVIRONMENTS: readonly NodeEnvironment[] = [
@@ -78,6 +80,21 @@ function readNumber(
   }
 
   return parsed;
+}
+
+function readPositiveAmountString(
+  config: Record<string, string | undefined>,
+  key: string,
+  defaultValue: string,
+): string {
+  const value = readString(config, key, defaultValue);
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${key} must be a positive amount`);
+  }
+
+  return parsed.toFixed(2);
 }
 
 function readBoolean(
@@ -170,6 +187,13 @@ export function validateEnvironment(
     'AFRICAS_TALKING_USERNAME',
     '',
   );
+  const nombaBaseUrl = readString(
+    config,
+    'NOMBA_BASE_URL',
+    environment === 'production'
+      ? 'https://api.nomba.com'
+      : 'https://sandbox.nomba.com',
+  );
   const nombaParentAccountId = readString(
     config,
     'NOMBA_PARENT_ACCOUNT_ID',
@@ -178,6 +202,11 @@ export function validateEnvironment(
   const nombaSubAccountId = readString(config, 'NOMBA_SUB_ACCOUNT_ID', '');
   const nombaClientId = readString(config, 'NOMBA_CLIENT_ID', '');
   const nombaPrivateKey = readString(config, 'NOMBA_PRIVATE_KEY', '');
+  const nombaCardTokenizationAmount = readPositiveAmountString(
+    config,
+    'NOMBA_CARD_TOKENIZATION_AMOUNT',
+    '50.00',
+  );
 
   const resendApiKey = readString(config, 'RESEND_API_KEY', '');
   const resendFromEmail = readString(config, 'RESEND_FROM_EMAIL', '');
@@ -185,6 +214,7 @@ export function validateEnvironment(
   for (const [key, value] of [
     ['AFRICAS_TALKING_BASE_URL', africasTalkingBaseUrl],
     ['BASE_URL', baseUrl],
+    ['NOMBA_BASE_URL', nombaBaseUrl],
   ] as const) {
     try {
       new URL(value);
@@ -293,9 +323,11 @@ export function validateEnvironment(
     ),
     RESEND_API_KEY: resendApiKey,
     RESEND_FROM_EMAIL: resendFromEmail,
+    NOMBA_BASE_URL: nombaBaseUrl,
     NOMBA_PARENT_ACCOUNT_ID: nombaParentAccountId,
     NOMBA_SUB_ACCOUNT_ID: nombaSubAccountId,
     NOMBA_CLIENT_ID: nombaClientId,
     NOMBA_PRIVATE_KEY: nombaPrivateKey,
+    NOMBA_CARD_TOKENIZATION_AMOUNT: nombaCardTokenizationAmount,
   };
 }

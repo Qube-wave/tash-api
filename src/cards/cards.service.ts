@@ -71,6 +71,7 @@ export class CardsService {
     const providerSession = await provider.initializeCardRegistration({
       userUuid,
       email: user.email,
+      phoneNumber: user.phoneNumber,
     });
 
     const session = await this.sessionsRepository.save(
@@ -113,6 +114,7 @@ export class CardsService {
       expiryYear: dto.expiryYear,
       cvv: dto.cvv,
       cardholderName: dto.cardholderName,
+      cardPin: dto.cardPin,
     });
 
     session.authorizationUrl =
@@ -151,7 +153,12 @@ export class CardsService {
       reference,
     );
     const provider = this.providerFactory.getProvider();
-    const result = await provider.submitCardOtp({ reference, otp: dto.otp });
+    const result = await provider.submitCardOtp({
+      reference,
+      otp: dto.otp,
+      transactionId: this.readSessionTransactionId(session),
+      phoneNumber: user.phoneNumber,
+    });
 
     session.metadata = {
       ...session.metadata,
@@ -406,6 +413,13 @@ export class CardsService {
   private readSessionCurrency(session: CardRegistrationSession): string {
     const currency = session.metadata.currency;
     return typeof currency === 'string' ? currency.toUpperCase() : 'NGN';
+  }
+
+  private readSessionTransactionId(
+    session: CardRegistrationSession,
+  ): string | undefined {
+    const transactionId = session.metadata.transactionId;
+    return typeof transactionId === 'string' ? transactionId : undefined;
   }
 
   private generateSessionReference(): string {

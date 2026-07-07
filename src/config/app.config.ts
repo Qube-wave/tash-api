@@ -26,5 +26,5 @@ export default registerAs('app', (): AppConfiguration => ({
     process.env.SKIP_EXTERNAL_CONNECTIONS === 'true' ||
     process.env.NODE_ENV === 'test',
   maxOtpAttempts: Number(process.env.MAX_OTP_ATTEMPTS ?? 5),
-  baseUrl: process.env.BASE_API ?? '',
+  baseUrl: process.env.BASE_URL ?? '',
 }));

@@ -43,6 +43,11 @@ export class SubmitCardDetailsDto {
   @IsString()
   @MaxLength(120)
   cardholderName?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(4, 4)
+  cardPin?: string;
 }
 
 export class SubmitCardOtpDto {

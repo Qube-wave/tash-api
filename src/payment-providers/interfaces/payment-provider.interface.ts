@@ -38,6 +38,7 @@ export interface ProviderBvnVerification {
 export interface InitializeCardRegistrationInput {
   userUuid: string;
   email: string | null;
+  phoneNumber?: string | null;
 }
 
 export interface ProviderCardRegistrationSession {
@@ -54,11 +55,14 @@ export interface SubmitCardDetailsInput {
   expiryYear: string;
   cvv: string;
   cardholderName?: string;
+  cardPin?: string;
 }
 
 export interface SubmitCardOtpInput {
   reference: string;
   otp: string;
+  transactionId?: string;
+  phoneNumber?: string | null;
 }
 
 export interface CompleteCardRegistrationInput {
