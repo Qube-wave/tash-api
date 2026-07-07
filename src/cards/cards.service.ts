@@ -1,9 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
+import type {
+  ProviderCardRegistrationStep,
+  SubmitCardDetailsInput,
+  SubmitCardOtpInput,
+} from '../payment-providers/interfaces/payment-provider.interface';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
 import { SettingsService } from '../settings/settings.service';
 import { UsersService } from '../users/users.service';
@@ -49,8 +54,17 @@ export interface CardRegistrationSessionResponse {
   failureReason: string | null;
 }
 
+type CardRegistrationProviderPhase = 'card_details' | 'otp';
+
+const GENERIC_CARD_DETAILS_FAILURE_MESSAGE =
+  'Card connection failed. Please check the card details and try again.';
+const GENERIC_CARD_OTP_FAILURE_MESSAGE =
+  'Card verification failed. Please check the OTP and try again.';
+
 @Injectable()
 export class CardsService {
+  private readonly logger = new Logger(CardsService.name);
+
   constructor(
     @InjectRepository(Card)
     private readonly cardsRepository: Repository<Card>,
@@ -107,7 +121,7 @@ export class CardsService {
       reference,
     );
     const provider = this.providerFactory.getProvider();
-    const result = await provider.submitCardDetails({
+    const result = await this.submitProviderCardDetailsSafely(session, {
       reference,
       cardNumber: dto.cardNumber,
       expiryMonth: dto.expiryMonth,
@@ -126,14 +140,16 @@ export class CardsService {
     };
 
     if (result.status === 'failed') {
-      session.status = CardRegistrationSessionStatus.Failed;
-      session.failureReason =
-        result.failureReason ?? 'Card registration failed.';
-      await this.sessionsRepository.save(session);
-      throw new AppException(
-        ErrorCode.CardRegistrationFailed,
-        session.failureReason,
-        400,
+      await this.failProviderPhaseWithGenericResponse(
+        session,
+        'card_details',
+        GENERIC_CARD_DETAILS_FAILURE_MESSAGE,
+        {
+          failureReason: result.failureReason,
+          metadata: sanitizeCardProviderMetadata(result.metadata),
+          provider: result.provider,
+          status: result.status,
+        },
       );
     }
 
@@ -153,7 +169,7 @@ export class CardsService {
       reference,
     );
     const provider = this.providerFactory.getProvider();
-    const result = await provider.submitCardOtp({
+    const result = await this.submitProviderCardOtpSafely(session, {
       reference,
       otp: dto.otp,
       transactionId: this.readSessionTransactionId(session),
@@ -167,23 +183,30 @@ export class CardsService {
     };
 
     if (result.status === 'failed') {
-      session.status = CardRegistrationSessionStatus.Failed;
-      session.failureReason =
-        result.failureReason ?? 'Card registration failed.';
-      await this.sessionsRepository.save(session);
-      throw new AppException(
-        ErrorCode.CardRegistrationFailed,
-        session.failureReason,
-        400,
+      await this.failProviderPhaseWithGenericResponse(
+        session,
+        'otp',
+        GENERIC_CARD_OTP_FAILURE_MESSAGE,
+        {
+          failureReason: result.failureReason,
+          metadata: sanitizeCardProviderMetadata(result.metadata),
+          provider: result.provider,
+          status: result.status,
+        },
       );
     }
 
     if (result.status !== 'successful') {
+      this.logProviderPhaseFailure(session, 'otp', {
+        metadata: sanitizeCardProviderMetadata(result.metadata),
+        provider: result.provider,
+        status: result.status,
+      });
       session.status = CardRegistrationSessionStatus.Pending;
       await this.sessionsRepository.save(session);
       throw new AppException(
         ErrorCode.CardRegistrationFailed,
-        'Card registration is still pending.',
+        GENERIC_CARD_OTP_FAILURE_MESSAGE,
         400,
       );
     }
@@ -298,6 +321,86 @@ export class CardsService {
       lastChargedAt: card.lastChargedAt,
       createdAt: card.createdAt,
     };
+  }
+
+  private async submitProviderCardDetailsSafely(
+    session: CardRegistrationSession,
+    input: SubmitCardDetailsInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    const provider = this.providerFactory.getProvider();
+    try {
+      return await provider.submitCardDetails(input);
+    } catch (error: unknown) {
+      return await this.failProviderPhaseWithGenericResponse(
+        session,
+        'card_details',
+        GENERIC_CARD_DETAILS_FAILURE_MESSAGE,
+        this.serializeError(error),
+      );
+    }
+  }
+
+  private async submitProviderCardOtpSafely(
+    session: CardRegistrationSession,
+    input: SubmitCardOtpInput,
+  ): Promise<ProviderCardRegistrationStep> {
+    const provider = this.providerFactory.getProvider();
+    try {
+      return await provider.submitCardOtp(input);
+    } catch (error: unknown) {
+      return await this.failProviderPhaseWithGenericResponse(
+        session,
+        'otp',
+        GENERIC_CARD_OTP_FAILURE_MESSAGE,
+        this.serializeError(error),
+      );
+    }
+  }
+
+  private async failProviderPhaseWithGenericResponse(
+    session: CardRegistrationSession,
+    phase: CardRegistrationProviderPhase,
+    message: string,
+    error: unknown,
+  ): Promise<never> {
+    this.logProviderPhaseFailure(session, phase, error);
+    session.status = CardRegistrationSessionStatus.Failed;
+    session.failureReason = message;
+    await this.sessionsRepository.save(session);
+
+    throw new AppException(ErrorCode.CardRegistrationFailed, message, 400);
+  }
+
+  private logProviderPhaseFailure(
+    session: CardRegistrationSession,
+    phase: CardRegistrationProviderPhase,
+    error: unknown,
+  ): void {
+    this.logger.error('Card registration provider phase failed', {
+      error,
+      phase,
+      reference: session.reference,
+      sessionId: session.id,
+      userId: session.userId,
+    });
+  }
+
+  private serializeError(error: unknown): Record<string, unknown> {
+    if (error instanceof AppException) {
+      return {
+        response: error.getResponse(),
+        status: error.getStatus(),
+      };
+    }
+
+    if (error instanceof Error) {
+      return {
+        message: error.message,
+        stack: error.stack,
+      };
+    }
+
+    return { message: String(error) };
   }
 
   private async getCompletableRegistrationSession(
