@@ -12,6 +12,7 @@ import {
   assertCardRegistrationCanFinalize,
   assertCardRegistrationCanProceed,
 } from './card-policy';
+import { sanitizeCardProviderMetadata } from './card-metadata.util';
 import {
   CreateCardRegistrationSessionDto,
   SubmitCardDetailsDto,
@@ -83,7 +84,7 @@ export class CardsService {
         failureReason: null,
         expiresAt: new Date(Date.now() + 30 * 60 * 1000),
         metadata: {
-          ...providerSession.metadata,
+          ...sanitizeCardProviderMetadata(providerSession.metadata),
           currency:
             dto.currency?.toUpperCase() ??
             publicProfile.profile?.defaultCurrency ??
@@ -118,7 +119,7 @@ export class CardsService {
       result.authorizationUrl ?? session.authorizationUrl;
     session.metadata = {
       ...session.metadata,
-      ...result.metadata,
+      ...sanitizeCardProviderMetadata(result.metadata),
       cardDetailsSubmittedAt: new Date().toISOString(),
     };
 
@@ -154,7 +155,7 @@ export class CardsService {
 
     session.metadata = {
       ...session.metadata,
-      ...result.metadata,
+      ...sanitizeCardProviderMetadata(result.metadata),
       cardOtpSubmittedAt: new Date().toISOString(),
     };
 
@@ -373,7 +374,7 @@ export class CardsService {
         isDefault: firstCard === 0,
         status: CardStatus.Active,
         lastChargedAt: null,
-        metadata: providerCard.metadata,
+        metadata: sanitizeCardProviderMetadata(providerCard.metadata),
       }),
     );
 
@@ -397,7 +398,7 @@ export class CardsService {
       status: session.status,
       authorizationUrl: session.authorizationUrl,
       expiresAt: session.expiresAt,
-      metadata: session.metadata,
+      metadata: sanitizeCardProviderMetadata(session.metadata),
       failureReason: session.failureReason,
     };
   }
