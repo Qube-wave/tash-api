@@ -9,7 +9,8 @@ import { SettingsService } from '../settings/settings.service';
 import { UsersService } from '../users/users.service';
 import {
   assertCardChargeable,
-  assertCardRegistrationCanComplete,
+  assertCardRegistrationCanFinalize,
+  assertCardRegistrationCanProceed,
 } from './card-policy';
 import {
   CreateCardRegistrationSessionDto,
@@ -179,6 +180,10 @@ export class CardsService {
       );
     }
 
+    session.status = CardRegistrationSessionStatus.Verified;
+    session.failureReason = null;
+    await this.sessionsRepository.save(session);
+
     return this.saveCompletedRegistrationCard(user, session);
   }
 
@@ -304,7 +309,7 @@ export class CardsService {
     }
 
     try {
-      assertCardRegistrationCanComplete(
+      assertCardRegistrationCanProceed(
         session.status,
         session.expiresAt,
         new Date(),
@@ -326,6 +331,22 @@ export class CardsService {
     user: Awaited<ReturnType<UsersService['getByUuid']>>,
     session: CardRegistrationSession,
   ): Promise<CardResponse> {
+    try {
+      assertCardRegistrationCanFinalize(
+        session.status,
+        session.expiresAt,
+        new Date(),
+      );
+    } catch (error) {
+      throw new AppException(
+        ErrorCode.CardRegistrationFailed,
+        error instanceof Error
+          ? error.message
+          : 'Card registration session cannot be finalized.',
+        400,
+      );
+    }
+
     const provider = this.providerFactory.getProvider();
     const providerCard = await provider.completeCardRegistration({
       reference: session.reference,

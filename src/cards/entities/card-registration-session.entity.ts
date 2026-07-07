@@ -10,6 +10,7 @@ import {
 export enum CardRegistrationSessionStatus {
   Created = 'created',
   Pending = 'pending',
+  Verified = 'verified',
   Completed = 'completed',
   Failed = 'failed',
   Expired = 'expired',

@@ -1,6 +1,7 @@
 import {
   assertCardChargeable,
-  assertCardRegistrationCanComplete,
+  assertCardRegistrationCanFinalize,
+  assertCardRegistrationCanProceed,
 } from './card-policy';
 import { CardRegistrationSessionStatus } from './entities/card-registration-session.entity';
 import { CardStatus } from './entities/card.entity';
@@ -18,7 +19,7 @@ describe('card policy', () => {
 
   it('allows fresh created registration sessions to complete', () => {
     expect(() =>
-      assertCardRegistrationCanComplete(
+      assertCardRegistrationCanProceed(
         CardRegistrationSessionStatus.Created,
         new Date('2026-07-03T10:10:00.000Z'),
         new Date('2026-07-03T10:00:00.000Z'),
@@ -26,9 +27,29 @@ describe('card policy', () => {
     ).not.toThrow();
   });
 
+  it('allows verified registration sessions to finalize', () => {
+    expect(() =>
+      assertCardRegistrationCanFinalize(
+        CardRegistrationSessionStatus.Verified,
+        new Date('2026-07-03T10:10:00.000Z'),
+        new Date('2026-07-03T10:00:00.000Z'),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects unverified registration sessions during finalization', () => {
+    expect(() =>
+      assertCardRegistrationCanFinalize(
+        CardRegistrationSessionStatus.Created,
+        new Date('2026-07-03T10:10:00.000Z'),
+        new Date('2026-07-03T10:00:00.000Z'),
+      ),
+    ).toThrow('not been verified');
+  });
+
   it('rejects expired registration sessions', () => {
     expect(() =>
-      assertCardRegistrationCanComplete(
+      assertCardRegistrationCanProceed(
         CardRegistrationSessionStatus.Created,
         new Date('2026-07-03T10:00:00.000Z'),
         new Date('2026-07-03T10:00:01.000Z'),

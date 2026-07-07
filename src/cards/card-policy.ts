@@ -7,7 +7,7 @@ export function assertCardChargeable(status: CardStatus): void {
   }
 }
 
-export function assertCardRegistrationCanComplete(
+export function assertCardRegistrationCanProceed(
   status: CardRegistrationSessionStatus,
   expiresAt: Date,
   now: Date,
@@ -18,8 +18,23 @@ export function assertCardRegistrationCanComplete(
 
   if (
     status !== CardRegistrationSessionStatus.Created &&
-    status !== CardRegistrationSessionStatus.Pending
+    status !== CardRegistrationSessionStatus.Pending &&
+    status !== CardRegistrationSessionStatus.Verified
   ) {
     throw new Error('Card registration session cannot be completed.');
+  }
+}
+
+export function assertCardRegistrationCanFinalize(
+  status: CardRegistrationSessionStatus,
+  expiresAt: Date,
+  now: Date,
+): void {
+  if (expiresAt <= now) {
+    throw new Error('Card registration session has expired.');
+  }
+
+  if (status !== CardRegistrationSessionStatus.Verified) {
+    throw new Error('Card registration session has not been verified.');
   }
 }
