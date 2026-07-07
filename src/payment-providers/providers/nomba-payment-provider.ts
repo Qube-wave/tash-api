@@ -598,7 +598,7 @@ export class NombaPaymentProvider implements PaymentProvider {
     input: CreateDirectDebitMandateInput,
   ): Promise<ProviderDirectDebitMandate> {
     const merchantReference = this.generateNumericMerchantReference();
-    const startDate = new Date();
+    const startDate = new Date(Date.now() + 5 * 60 * 1000);
     const endDate = new Date(startDate);
     endDate.setFullYear(endDate.getFullYear() + 1);
 
@@ -620,9 +620,7 @@ export class NombaPaymentProvider implements PaymentProvider {
         merchantReference,
         startDate: this.formatNombaDateTime(startDate),
         endDate: this.formatNombaDateTime(endDate),
-        ...(input.customerEmail !== null && input.customerEmail !== undefined
-          ? { customerEmail: input.customerEmail }
-          : {}),
+        customerEmail: input.customerEmail,
         startImmediately: true,
       },
     });

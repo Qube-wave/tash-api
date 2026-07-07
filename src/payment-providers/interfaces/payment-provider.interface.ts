@@ -120,7 +120,7 @@ export interface CreateDirectDebitMandateInput {
   accountNumber: string;
   accountName: string;
   customerName: string;
-  customerEmail?: string | null;
+  customerEmail: string;
   customerPhoneNumber: string;
   customerAddress?: string | null;
   maximumAmount: number;

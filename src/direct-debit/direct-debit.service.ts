@@ -63,6 +63,14 @@ export class DirectDebitService {
       );
     }
 
+    if (user.email === null) {
+      throw new AppException(
+        ErrorCode.DirectDebitChargeFailed,
+        'An email address is required to create a direct-debit mandate.',
+        400,
+      );
+    }
+
     const customerName = publicProfile.profile
       ? `${publicProfile.profile.firstName} ${publicProfile.profile.lastName}`
       : dto.accountName;
