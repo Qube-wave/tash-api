@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BvnService } from '../bvn/bvn.service';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
@@ -46,7 +45,6 @@ export class DirectDebitService {
     private readonly mandatesRepository: Repository<DirectDebitMandate>,
     private readonly providerFactory: PaymentProviderFactory,
     private readonly usersService: UsersService,
-    private readonly bvnService: BvnService,
     private readonly settingsService: SettingsService,
   ) {}
 
@@ -54,13 +52,30 @@ export class DirectDebitService {
     userUuid: string,
     dto: CreateDirectDebitMandateDto,
   ): Promise<DirectDebitMandateResponse> {
-    await this.bvnService.assertUserVerified(userUuid);
     const user = await this.usersService.getByUuid(userUuid);
+    const publicProfile = await this.usersService.getPublicProfile(userUuid);
+
+    if (user.phoneNumber === null) {
+      throw new AppException(
+        ErrorCode.DirectDebitChargeFailed,
+        'A phone number is required to create a direct-debit mandate.',
+        400,
+      );
+    }
+
+    const customerName = publicProfile.profile
+      ? `${publicProfile.profile.firstName} ${publicProfile.profile.lastName}`
+      : dto.accountName;
     const provider = this.providerFactory.getProvider();
     const providerMandate = await provider.createDirectDebitMandate({
       userUuid,
       bankCode: dto.bankCode,
       accountNumber: dto.accountNumber,
+      accountName: dto.accountName,
+      customerName,
+      customerEmail: user.email,
+      customerPhoneNumber: user.phoneNumber,
+      customerAddress: publicProfile.profile?.country ?? 'Nigeria',
       maximumAmount: dto.maximumAmount,
       currency: dto.currency.toUpperCase(),
     });
@@ -153,10 +168,25 @@ export class DirectDebitService {
   async revoke(
     userId: number,
     uuid: string,
+    reason?: string,
   ): Promise<DirectDebitMandateResponse> {
     const mandate = await this.getForUser(userId, uuid);
-    mandate.status = DirectDebitMandateStatus.Revoked;
-    mandate.revokedAt = new Date();
+    const providerMandate = await this.providerFactory
+      .getProvider()
+      .revokeDirectDebitMandate({
+        providerMandateId: mandate.providerMandateId,
+        reason,
+      });
+
+    mandate.status = this.mapProviderStatus(providerMandate.status);
+    if (mandate.status === DirectDebitMandateStatus.Revoked) {
+      mandate.revokedAt = new Date();
+    }
+    mandate.failureReason = providerMandate.failureReason ?? null;
+    mandate.metadata = {
+      ...mandate.metadata,
+      ...providerMandate.metadata,
+    };
     const savedMandate = await this.mandatesRepository.save(mandate);
     await this.settingsService.clearDefaultDirectDebitMandateIfMatches(
       userId,

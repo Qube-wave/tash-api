@@ -32,6 +32,7 @@ import {
   ProviderDirectDebitMandate,
   ProviderPaymentResult,
   ProviderRefundResult,
+  RevokeDirectDebitMandateInput,
   ProviderTransaction,
   ProviderTransferResult,
   ProviderVirtualAccount,
@@ -112,6 +113,35 @@ interface NombaBankAccountLookupData {
   accountNumber?: unknown;
   accountName?: unknown;
   bankName?: unknown;
+}
+
+interface NombaDirectDebitMandateData {
+  mandateId?: unknown;
+  merchantReference?: unknown;
+  customerPhoneNumber?: unknown;
+  description?: unknown;
+  customerAccountName?: unknown;
+  customerAccountNumber?: unknown;
+  bankCode?: unknown;
+  amount?: unknown;
+  customerName?: unknown;
+  customerAddress?: unknown;
+  customerEmail?: unknown;
+  frequency?: unknown;
+  status?: unknown;
+  mandateStatus?: unknown;
+  mandateAdviceStatus?: unknown;
+  rejectionReason?: unknown;
+  message?: unknown;
+}
+
+interface NombaDirectDebitChargeData {
+  mandateId?: unknown;
+  status?: unknown;
+  amount?: unknown;
+  message?: unknown;
+  transactionId?: unknown;
+  reference?: unknown;
 }
 
 interface NombaWebhookPayload {
@@ -564,25 +594,200 @@ export class NombaPaymentProvider implements PaymentProvider {
     });
   }
 
-  createDirectDebitMandate(
+  async createDirectDebitMandate(
     input: CreateDirectDebitMandateInput,
   ): Promise<ProviderDirectDebitMandate> {
-    void input;
-    return Promise.reject(this.notImplemented('createDirectDebitMandate'));
+    const merchantReference = this.generateNumericMerchantReference();
+    const startDate = new Date();
+    const endDate = new Date(startDate);
+    endDate.setFullYear(endDate.getFullYear() + 1);
+
+    const response = await this.request<
+      NombaEnvelope<NombaDirectDebitMandateData>
+    >({
+      method: 'POST',
+      url: '/v1/direct-debits',
+      accountScoped: true,
+      data: {
+        customerAccountNumber: input.accountNumber,
+        bankCode: input.bankCode,
+        customerName: input.customerName,
+        customerAddress: input.customerAddress ?? 'Nigeria',
+        customerAccountName: input.accountName,
+        frequency: 'VARIABLE',
+        narration: 'Tash direct debit mandate',
+        customerPhoneNumber: input.customerPhoneNumber,
+        merchantReference,
+        startDate: this.formatNombaDateTime(startDate),
+        endDate: this.formatNombaDateTime(endDate),
+        ...(input.customerEmail !== null && input.customerEmail !== undefined
+          ? { customerEmail: input.customerEmail }
+          : {}),
+        startImmediately: true,
+      },
+    });
+    const data = this.assertSuccessfulEnvelope(
+      response.data,
+      'Direct-debit mandate creation failed.',
+    );
+    const mandateId = this.readString(data.mandateId);
+
+    if (mandateId === undefined) {
+      throw new AppException(
+        ErrorCode.ProviderUnavailable,
+        'Nomba did not return a direct-debit mandate id.',
+        HttpStatus.BAD_GATEWAY,
+        this.safeDirectDebitMetadata(data),
+      );
+    }
+
+    return {
+      provider: 'nomba',
+      providerCustomerId: input.userUuid,
+      providerMandateId: mandateId,
+      authorizationReference:
+        this.readString(data.merchantReference) ?? merchantReference,
+      status: this.mapNombaDirectDebitMandateStatus(data),
+      accountName:
+        this.readString(data.customerAccountName) ?? input.accountName,
+      accountNumberLastFour: this.extractLastFourDigits(
+        this.readString(data.customerAccountNumber) ?? input.accountNumber,
+      ),
+      bankCode: this.readString(data.bankCode) ?? input.bankCode,
+      failureReason: this.readString(data.rejectionReason),
+      metadata: {
+        ...this.safeDirectDebitMetadata(data),
+        merchantReference:
+          this.readString(data.merchantReference) ?? merchantReference,
+        authorizationDescription: this.readString(data.description),
+      },
+    };
   }
 
-  authorizeDirectDebitMandate(
+  async authorizeDirectDebitMandate(
     input: AuthorizeDirectDebitMandateInput,
   ): Promise<ProviderDirectDebitMandate> {
-    void input;
-    return Promise.reject(this.notImplemented('authorizeDirectDebitMandate'));
+    const response = await this.request<
+      NombaEnvelope<NombaDirectDebitMandateData>
+    >({
+      method: 'GET',
+      url: `/v1/direct-debits/status?mandateId=${encodeURIComponent(
+        input.providerMandateId,
+      )}`,
+      accountScoped: true,
+    });
+    const data = this.assertSuccessfulEnvelope(
+      response.data,
+      'Direct-debit mandate status check failed.',
+    );
+
+    return {
+      provider: 'nomba',
+      providerMandateId:
+        this.readString(data.mandateId) ?? input.providerMandateId,
+      authorizationReference: input.authorizationReference,
+      status: this.mapNombaDirectDebitMandateStatus(data),
+      accountName: this.readString(data.customerAccountName),
+      accountNumberLastFour: this.extractOptionalLastFourDigits(
+        this.readString(data.customerAccountNumber),
+      ),
+      bankCode: this.readString(data.bankCode),
+      failureReason: this.readString(data.rejectionReason),
+      metadata: {
+        ...this.safeDirectDebitMetadata(data),
+        authorizationReference: input.authorizationReference,
+      },
+    };
   }
 
-  chargeDirectDebitMandate(
+  async revokeDirectDebitMandate(
+    input: RevokeDirectDebitMandateInput,
+  ): Promise<ProviderDirectDebitMandate> {
+    const response = await this.request<NombaEnvelope<unknown>>({
+      method: 'PUT',
+      url: '/v1/direct-debits/update-status',
+      accountScoped: true,
+      data: {
+        mandateId: input.providerMandateId,
+        status: 'SUSPEND',
+      },
+    });
+    const data = this.readNombaDirectDebitMandateData(
+      this.assertSuccessfulEnvelope(
+        response.data,
+        'Direct-debit mandate revocation failed.',
+      ),
+    );
+
+    return {
+      provider: 'nomba',
+      providerMandateId:
+        this.readString(data.mandateId) ?? input.providerMandateId,
+      status: this.mapNombaDirectDebitMandateStatus(data),
+      accountName: this.readString(data.customerAccountName),
+      accountNumberLastFour: this.extractOptionalLastFourDigits(
+        this.readString(data.customerAccountNumber),
+      ),
+      bankCode: this.readString(data.bankCode),
+      failureReason: this.readString(data.rejectionReason),
+      metadata: {
+        ...this.safeDirectDebitMetadata(data),
+        reason: input.reason,
+      },
+    };
+  }
+
+  async chargeDirectDebitMandate(
     input: ChargeDirectDebitMandateInput,
   ): Promise<ProviderPaymentResult> {
-    void input;
-    return Promise.reject(this.notImplemented('chargeDirectDebitMandate'));
+    const response = await this.request<
+      NombaEnvelope<NombaDirectDebitChargeData>
+    >({
+      method: 'POST',
+      url: '/v1/direct-debits/debit-mandate',
+      accountScoped: true,
+      data: {
+        mandateId: input.providerMandateId,
+        amount: this.formatAmount(input.amount),
+      },
+    });
+    const data = response.data.data ?? {};
+    const providerReference =
+      this.readString(data.transactionId) ??
+      this.readString(data.reference) ??
+      this.readString(data.mandateId) ??
+      input.reference;
+
+    if (
+      !this.isSuccessfulEnvelope(response.data) ||
+      !this.isSuccessfulNombaDirectDebitCharge(data.status)
+    ) {
+      return {
+        provider: 'nomba',
+        providerReference,
+        status: 'failed',
+        failureReason:
+          this.readString(data.message) ??
+          this.readDescription(response.data) ??
+          'Direct-debit charge failed.',
+        metadata: {
+          ...this.safeProviderMetadata(data),
+          reference: input.reference,
+          currency: input.currency,
+        },
+      };
+    }
+
+    return {
+      provider: 'nomba',
+      providerReference,
+      status: 'successful',
+      metadata: {
+        ...this.safeProviderMetadata(data),
+        reference: input.reference,
+        currency: input.currency,
+      },
+    };
   }
 
   createVirtualAccount(
@@ -983,6 +1188,102 @@ export class NombaPaymentProvider implements PaymentProvider {
     );
   }
 
+  private readNombaDirectDebitMandateData(
+    value: unknown,
+  ): NombaDirectDebitMandateData {
+    const record = this.asRecord(value);
+    const items = record.items;
+
+    if (Array.isArray(items)) {
+      const firstItem = items.find(
+        (item) => item !== null && typeof item === 'object',
+      );
+
+      if (firstItem !== undefined) {
+        return firstItem as NombaDirectDebitMandateData;
+      }
+    }
+
+    return record as NombaDirectDebitMandateData;
+  }
+
+  private mapNombaDirectDebitMandateStatus(
+    data: NombaDirectDebitMandateData,
+  ): ProviderDirectDebitMandate['status'] {
+    const status = (
+      this.readString(data.mandateStatus) ??
+      this.readString(data.status) ??
+      ''
+    )
+      .replace(/[\s-]+/g, '_')
+      .toUpperCase();
+    const adviceStatus = (this.readString(data.mandateAdviceStatus) ?? '')
+      .replace(/[\s-]+/g, '_')
+      .toUpperCase();
+
+    if (status === 'ACTIVE') {
+      return adviceStatus === 'ADVICE_SENT'
+        ? 'active'
+        : 'requires_authorization';
+    }
+
+    if (
+      ['SUSPEND', 'SUSPENDED', 'DELETED', 'CANCELLED', 'CANCELED'].includes(
+        status,
+      )
+    ) {
+      return 'revoked';
+    }
+
+    if (status === 'EXPIRED') {
+      return 'expired';
+    }
+
+    if (['FAILED', 'REJECTED', 'DECLINED'].includes(status)) {
+      return 'failed';
+    }
+
+    return 'requires_authorization';
+  }
+
+  private isSuccessfulNombaDirectDebitCharge(status: unknown): boolean {
+    if (status === true) {
+      return true;
+    }
+
+    const normalized = this.readString(status)?.toUpperCase();
+    return (
+      normalized !== undefined &&
+      ['SUCCESS', 'SUCCESSFUL', 'APPROVED', 'COMPLETED'].includes(normalized)
+    );
+  }
+
+  private safeDirectDebitMetadata(
+    data: NombaDirectDebitMandateData,
+  ): Record<string, unknown> {
+    const metadata = { ...this.safeProviderMetadata(data) };
+    const accountNumber = this.readString(metadata.customerAccountNumber);
+
+    delete metadata.customerAccountNumber;
+
+    if (accountNumber !== undefined) {
+      metadata.customerAccountNumberLastFour =
+        this.extractLastFourDigits(accountNumber);
+    }
+
+    return metadata;
+  }
+
+  private generateNumericMerchantReference(): string {
+    return `${Date.now()}${Math.floor(Math.random() * 1_000_000)
+      .toString()
+      .padStart(6, '0')}`;
+  }
+
+  private formatNombaDateTime(date: Date): string {
+    return date.toISOString().slice(0, 16);
+  }
+
   private readString(value: unknown): string | undefined {
     return typeof value === 'string' && value.trim() !== ''
       ? value.trim()
@@ -1052,6 +1353,12 @@ export class NombaPaymentProvider implements PaymentProvider {
   private extractLastFourDigits(maskedPan: string | undefined): string {
     const digits = maskedPan?.replace(/\D/g, '') ?? '';
     return digits.slice(-4).padStart(4, '0');
+  }
+
+  private extractOptionalLastFourDigits(
+    value: string | undefined,
+  ): string | undefined {
+    return value === undefined ? undefined : this.extractLastFourDigits(value);
   }
 
   private formatAmount(amount: number): string {

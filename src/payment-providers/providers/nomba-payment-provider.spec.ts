@@ -443,4 +443,209 @@ describe('NombaPaymentProvider', () => {
       }),
     );
   });
+
+  it('creates a Nomba direct debit mandate', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          mandateId: 'mandate-id',
+          merchantReference: '1234567890',
+          customerPhoneNumber: '08012345678',
+          description: 'Pay N50.00 into 9880218357 with Paystack-Titan Bank.',
+        },
+      },
+    });
+
+    const result = await provider.createDirectDebitMandate({
+      userUuid: 'user-uuid',
+      bankCode: '058',
+      accountNumber: '0123456789',
+      accountName: 'Test User',
+      customerName: 'Test User',
+      customerEmail: 'user@example.com',
+      customerPhoneNumber: '08012345678',
+      customerAddress: 'Nigeria',
+      maximumAmount: 10000,
+      currency: 'NGN',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerCustomerId: 'user-uuid',
+      providerMandateId: 'mandate-id',
+      authorizationReference: '1234567890',
+      status: 'requires_authorization',
+      accountName: 'Test User',
+      accountNumberLastFour: '6789',
+      bankCode: '058',
+      metadata: {
+        authorizationDescription:
+          'Pay N50.00 into 9880218357 with Paystack-Titan Bank.',
+      },
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '/v1/direct-debits',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+        data: expect.objectContaining({
+          customerAccountNumber: '0123456789',
+          bankCode: '058',
+          customerName: 'Test User',
+          customerAccountName: 'Test User',
+          customerPhoneNumber: '08012345678',
+          customerEmail: 'user@example.com',
+          frequency: 'VARIABLE',
+          narration: 'Tash direct debit mandate',
+          merchantReference: expect.stringMatching(/^\d+$/),
+          startImmediately: true,
+        }),
+      }),
+    );
+  });
+
+  it('checks a Nomba direct debit mandate status during authorization', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          mandateId: 'mandate-id',
+          customerAccountName: 'Test User',
+          customerAccountNumber: '0123456789',
+          bankCode: '058',
+          mandateStatus: 'Active',
+          mandateAdviceStatus: 'Advice Sent',
+        },
+      },
+    });
+
+    const result = await provider.authorizeDirectDebitMandate({
+      providerMandateId: 'mandate-id',
+      authorizationReference: '1234567890',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerMandateId: 'mandate-id',
+      authorizationReference: '1234567890',
+      status: 'active',
+      accountName: 'Test User',
+      accountNumberLastFour: '6789',
+      bankCode: '058',
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'GET',
+        url: '/v1/direct-debits/status?mandateId=mandate-id',
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+      }),
+    );
+  });
+
+  it('revokes a Nomba direct debit mandate by suspending it', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          items: [
+            {
+              mandateId: 'mandate-id',
+              status: 'SUSPEND',
+              customerAccountName: 'Test User',
+              customerAccountNumber: '0123456789',
+              bankCode: '058',
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await provider.revokeDirectDebitMandate({
+      providerMandateId: 'mandate-id',
+      reason: 'User revoked mandate',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerMandateId: 'mandate-id',
+      status: 'revoked',
+      accountName: 'Test User',
+      accountNumberLastFour: '6789',
+      bankCode: '058',
+      metadata: {
+        reason: 'User revoked mandate',
+        customerAccountNumberLastFour: '6789',
+      },
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'PUT',
+        url: '/v1/direct-debits/update-status',
+        data: {
+          mandateId: 'mandate-id',
+          status: 'SUSPEND',
+        },
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+      }),
+    );
+  });
+
+  it('charges a Nomba direct debit mandate', async () => {
+    const { client, provider } = createProvider();
+    client.request.mockResolvedValueOnce({
+      data: {
+        code: '00',
+        data: {
+          mandateId: 'mandate-id',
+          status: 'SUCCESS',
+          amount: '110.00',
+          message: 'Approved or completed successfully',
+        },
+      },
+    });
+
+    const result = await provider.chargeDirectDebitMandate({
+      providerMandateId: 'mandate-id',
+      amount: 110,
+      currency: 'NGN',
+      reference: 'direct_debit_charge_ref',
+    });
+
+    expect(result).toMatchObject({
+      provider: 'nomba',
+      providerReference: 'mandate-id',
+      status: 'successful',
+      metadata: {
+        reference: 'direct_debit_charge_ref',
+        currency: 'NGN',
+      },
+    });
+    expect(client.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: 'POST',
+        url: '/v1/direct-debits/debit-mandate',
+        data: {
+          mandateId: 'mandate-id',
+          amount: '110.00',
+        },
+        headers: expect.objectContaining({
+          Authorization: 'Bearer nomba-access-token',
+          accountId: 'parent-account',
+        }),
+      }),
+    );
+  });
 });

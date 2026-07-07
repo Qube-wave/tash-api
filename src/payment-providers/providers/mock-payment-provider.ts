@@ -20,6 +20,7 @@ import {
   ProviderDirectDebitMandate,
   ProviderPaymentResult,
   ProviderRefundResult,
+  RevokeDirectDebitMandateInput,
   ProviderTransaction,
   ProviderTransferResult,
   ProviderVirtualAccount,
@@ -166,6 +167,20 @@ export class MockPaymentProvider implements PaymentProvider {
       providerMandateId: 'mock_mandate',
       status: 'active',
       metadata: sandboxMetadata,
+    });
+  }
+
+  revokeDirectDebitMandate(
+    input: RevokeDirectDebitMandateInput,
+  ): Promise<ProviderDirectDebitMandate> {
+    return Promise.resolve({
+      provider: 'mock',
+      providerMandateId: input.providerMandateId,
+      status: 'revoked',
+      metadata: {
+        ...sandboxMetadata,
+        reason: input.reason,
+      },
     });
   }
 

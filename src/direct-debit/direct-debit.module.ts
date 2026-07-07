@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BvnModule } from '../bvn/bvn.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { PaymentProvidersModule } from '../payment-providers/payment-providers.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -16,7 +15,6 @@ import { DirectDebitMandate } from './entities/direct-debit-mandate.entity';
 @Module({
   imports: [
     TypeOrmModule.forFeature([DirectDebitMandate]),
-    BvnModule,
     IdempotencyModule,
     PaymentProvidersModule,
     SettingsModule,

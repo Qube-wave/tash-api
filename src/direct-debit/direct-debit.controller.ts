@@ -56,9 +56,8 @@ export class DirectDebitController {
   revokeMandate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('uuid') uuid: string,
-    @Body() _dto: RevokeDirectDebitMandateDto,
+    @Body() dto: RevokeDirectDebitMandateDto,
   ): Promise<DirectDebitMandateResponse> {
-    void _dto;
-    return this.directDebitService.revoke(user.id, uuid);
+    return this.directDebitService.revoke(user.id, uuid, dto.reason);
   }
 }

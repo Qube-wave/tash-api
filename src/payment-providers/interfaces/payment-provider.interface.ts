@@ -118,6 +118,11 @@ export interface CreateDirectDebitMandateInput {
   userUuid: string;
   bankCode: string;
   accountNumber: string;
+  accountName: string;
+  customerName: string;
+  customerEmail?: string | null;
+  customerPhoneNumber: string;
+  customerAddress?: string | null;
   maximumAmount: number;
   currency: string;
 }
@@ -125,6 +130,11 @@ export interface CreateDirectDebitMandateInput {
 export interface AuthorizeDirectDebitMandateInput {
   providerMandateId: string;
   authorizationReference: string;
+}
+
+export interface RevokeDirectDebitMandateInput {
+  providerMandateId: string;
+  reason?: string;
 }
 
 export interface ProviderDirectDebitMandate {
@@ -265,6 +275,9 @@ export interface PaymentProvider {
   ): Promise<ProviderDirectDebitMandate>;
   authorizeDirectDebitMandate(
     input: AuthorizeDirectDebitMandateInput,
+  ): Promise<ProviderDirectDebitMandate>;
+  revokeDirectDebitMandate(
+    input: RevokeDirectDebitMandateInput,
   ): Promise<ProviderDirectDebitMandate>;
   chargeDirectDebitMandate(
     input: ChargeDirectDebitMandateInput,

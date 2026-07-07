@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
@@ -14,6 +14,7 @@ export class BvnController {
   constructor(private readonly bvnService: BvnService) {}
 
   @Post('verify')
+  @ApiOperation({ summary: 'Verify the authenticated user BVN' })
   verify(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: VerifyBvnDto,
@@ -22,6 +23,7 @@ export class BvnController {
   }
 
   @Get('status')
+  @ApiOperation({ summary: 'Get authenticated user BVN verification status' })
   getStatus(
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<BvnStatusResponse> {
@@ -29,6 +31,9 @@ export class BvnController {
   }
 
   @Post('retry')
+  @ApiOperation({
+    summary: 'Retry BVN verification for the authenticated user',
+  })
   retry(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: VerifyBvnDto,
