@@ -11,7 +11,7 @@ export function createTypeOrmOptions(
     type: 'postgres',
     autoLoadEntities: true,
     synchronize: synchronizeSchema,
-    migrationsRun: false,
+    migrationsRun: true,
     migrations: ['dist/database/migrations/*.js'],
     logging: false,
     ssl: config.ssl ? { rejectUnauthorized: false } : false,
