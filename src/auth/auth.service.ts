@@ -393,6 +393,64 @@ export class AuthService {
     return this.usersService.updateEmail(userId, email);
   }
 
+  async sendAccountPhoneVerification(
+    userId: number,
+    dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
+    const phoneNumber = dto.phoneNumber.trim();
+    const user = await this.usersService.findById(userId);
+
+    if (user === null) {
+      throw this.invalidCredentials();
+    }
+
+    const existingUser = await this.usersService.findByPhone(phoneNumber);
+    if (existingUser !== null && existingUser.id !== user.id) {
+      throw new BadRequestException('Phone number is already in use.');
+    }
+
+    if (user.phoneNumber === phoneNumber && user.phoneVerifiedAt !== null) {
+      return {
+        message: 'Phone number is already verified',
+      };
+    }
+
+    const token = await this.createAccountPhoneVerificationToken(
+      user.id,
+      phoneNumber,
+    );
+
+    await this.notificationService.enqueuOtpSmsNotification({
+      phoneNumber,
+      attempts: 5,
+      length: 6,
+      otp: token,
+      ttl: 15,
+    });
+
+    return {
+      message: 'A verification code has been sent to your phone',
+    };
+  }
+
+  async completeAccountPhoneVerification(
+    userId: number,
+    dto: CompletePhoneVerificationDto,
+  ): Promise<PublicUserProfile> {
+    const phoneNumber = dto.phoneNumber.trim();
+
+    await this.consumeVerificationToken(
+      VerificationTokenType.Phone,
+      dto.token,
+      {
+        userId,
+        phoneNumber,
+      },
+    );
+
+    return this.usersService.updatePhoneNumber(userId, phoneNumber);
+  }
+
   async refresh(dto: RefreshTokenDto): Promise<AuthTokens> {
     const { stored, user } = await this.validateRefreshToken(dto.refreshToken);
     const replacement = await this.issueTokens(user);
@@ -665,6 +723,41 @@ export class AuthService {
           userId,
           email,
           type: VerificationTokenType.Email,
+          attempts: 0,
+          maxAttempts,
+          tokenHash: await this.hashService.hash(token),
+          expiresAt: new Date(
+            Date.now() + auth.verificationTokenTtlSeconds * 1000,
+          ),
+          consumedAt: null,
+        }),
+      );
+
+      return token;
+    });
+  }
+
+  private async createAccountPhoneVerificationToken(
+    userId: number,
+    phoneNumber: string,
+    maxAttempts = 5,
+  ): Promise<string> {
+    const auth = this.configService.getOrThrow<AuthConfiguration>('auth');
+    const token = String(Math.floor(100000 + Math.random() * 900000));
+
+    return this.dataSource.transaction(async (manager) => {
+      await manager.delete(VerificationToken, {
+        userId,
+        type: VerificationTokenType.Phone,
+      });
+
+      await manager.save(
+        VerificationToken,
+        manager.create(VerificationToken, {
+          tokenId: randomUUID(),
+          userId,
+          phoneNumber,
+          type: VerificationTokenType.Phone,
           attempts: 0,
           maxAttempts,
           tokenHash: await this.hashService.hash(token),

@@ -123,6 +123,26 @@ export class AuthController {
     return this.authService.completeAccountEmailVerification(user.id, dto);
   }
 
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('me/phone/send-verification')
+  sendAccountPhoneVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyPhoneNumberDto,
+  ): Promise<{ message: string }> {
+    return this.authService.sendAccountPhoneVerification(user.id, dto);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('me/phone/complete-verification')
+  completeAccountPhoneVerification(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CompletePhoneVerificationDto,
+  ): Promise<PublicUserProfile> {
+    return this.authService.completeAccountPhoneVerification(user.id, dto);
+  }
+
   @Post('refresh')
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokens> {
     return this.authService.refresh(dto);

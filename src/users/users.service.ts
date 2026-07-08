@@ -346,6 +346,34 @@ export class UsersService {
     return this.getPublicProfile(user.uuid);
   }
 
+  async updatePhoneNumber(
+    userId: number,
+    phoneNumber: string,
+  ): Promise<PublicUserProfile> {
+    const normalizedPhoneNumber = phoneNumber.trim();
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+
+    if (user === null) {
+      throw new NotFoundException('User was not found.');
+    }
+
+    const existing = await this.usersRepository.findOne({
+      where: { phoneNumber: normalizedPhoneNumber },
+    });
+
+    if (existing !== null && existing.id !== user.id) {
+      throw new ConflictException(
+        'A user with this phone number already exists.',
+      );
+    }
+
+    user.phoneNumber = normalizedPhoneNumber;
+    user.phoneVerifiedAt = new Date();
+    await this.usersRepository.save(user);
+
+    return this.getPublicProfile(user.uuid);
+  }
+
   private async ensureUniqueIdentity({
     email,
     phoneNumber,
