@@ -10,6 +10,7 @@ export function createTypeOrmOptions(
   const baseOptions: TypeOrmModuleOptions = {
     type: 'postgres',
     autoLoadEntities: true,
+    entities: ['dist/**/*.entity.js'],
     synchronize: synchronizeSchema,
     migrationsRun: true,
     migrations: ['dist/database/migrations/*.js'],
