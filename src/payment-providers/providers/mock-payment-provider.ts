@@ -8,6 +8,7 @@ import {
   CreateDirectDebitMandateInput,
   CreateProviderCustomerInput,
   CreateVirtualAccountInput,
+  DisableVirtualAccountInput,
   InitializeCardRegistrationInput,
   NormalizedWebhookEvent,
   PaymentProvider,
@@ -24,6 +25,7 @@ import {
   ProviderTransaction,
   ProviderTransferResult,
   ProviderVirtualAccount,
+  ProviderVirtualAccountActionResult,
   RefundPaymentInput,
   ResolveBankAccountInput,
   SendBankTransferInput,
@@ -215,6 +217,20 @@ export class MockPaymentProvider implements PaymentProvider {
         ...sandboxMetadata,
         purpose: input.purpose,
         type: input.type,
+      },
+    });
+  }
+
+  disableVirtualAccount(
+    input: DisableVirtualAccountInput,
+  ): Promise<ProviderVirtualAccountActionResult> {
+    return Promise.resolve({
+      provider: 'mock',
+      providerAccountId: input.providerAccountId,
+      status: 'disabled',
+      metadata: {
+        ...sandboxMetadata,
+        accountNumber: input.accountNumber,
       },
     });
   }

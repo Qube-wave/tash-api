@@ -7,6 +7,7 @@ import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderName } from '../config/payment-provider.config';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
 import {
+  Transaction,
   TransactionDirection,
   TransactionStatus,
   TransactionType,
@@ -42,6 +43,18 @@ interface VirtualAccountFundingInput {
   accountNumber?: string;
   amount: number;
   currency: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface PayoutWebhookInput {
+  provider: string;
+  providerEventId: string;
+  providerReference: string;
+  transactionReference?: string;
+  status: 'successful' | 'failed' | 'reversed';
+  amount?: number;
+  currency?: string;
+  failureReason?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -209,6 +222,19 @@ export class WebhooksService {
       return transactionReference;
     }
 
+    const payout = this.extractNombaPayoutWebhook(event);
+
+    if (payout !== null) {
+      const transactionReference = await this.applyPayoutWebhook(payout);
+      this.logger.log('Nomba payout webhook processed', {
+        providerEventId: event.providerEventId,
+        transactionReference,
+        providerReference: payout.providerReference,
+        status: payout.status,
+      });
+      return transactionReference;
+    }
+
     const result =
       await this.cardsService.completeRegistrationFromProviderWebhook({
         provider: event.provider,
@@ -255,6 +281,20 @@ export class WebhooksService {
     }
 
     return this.dataSource.transaction(async (manager) => {
+      const existingTransaction = await manager
+        .getRepository(Transaction)
+        .findOne({
+          where: {
+            provider: input.provider,
+            providerReference: input.providerReference,
+          },
+          lock: { mode: 'pessimistic_write' },
+        });
+
+      if (existingTransaction !== null) {
+        return existingTransaction.reference;
+      }
+
       const lockedWallet = await this.walletsService.lockWallet(
         manager,
         account.walletId,
@@ -309,6 +349,255 @@ export class WebhooksService {
       await manager.save(WalletLedgerEntry, ledgerEntry);
       return savedTransaction.reference;
     });
+  }
+
+  private async applyPayoutWebhook(
+    input: PayoutWebhookInput,
+  ): Promise<string | undefined> {
+    return this.dataSource.transaction(async (manager) => {
+      const transactionRepository = manager.getRepository(Transaction);
+      const transaction = input.transactionReference
+        ? await transactionRepository.findOne({
+            where: { reference: input.transactionReference },
+            lock: { mode: 'pessimistic_write' },
+          })
+        : await transactionRepository.findOne({
+            where: {
+              provider: input.provider,
+              providerReference: input.providerReference,
+            },
+            lock: { mode: 'pessimistic_write' },
+          });
+
+      if (transaction === null) {
+        this.logger.warn('Nomba payout webhook did not match a transaction', {
+          providerEventId: input.providerEventId,
+          providerReference: input.providerReference,
+          transactionReference: input.transactionReference,
+        });
+        return undefined;
+      }
+
+      if (transaction.provider === null) {
+        transaction.provider = input.provider;
+      }
+
+      if (transaction.providerReference === null) {
+        transaction.providerReference = input.providerReference;
+      }
+
+      if (input.status === 'successful') {
+        if (transaction.status === TransactionStatus.Successful) {
+          await transactionRepository.save(transaction);
+          return transaction.reference;
+        }
+
+        if (transaction.status === TransactionStatus.Reversed) {
+          return transaction.reference;
+        }
+
+        this.transactionsService.transition(
+          transaction,
+          TransactionStatus.Successful,
+        );
+        await transactionRepository.save(transaction);
+        return transaction.reference;
+      }
+
+      if (
+        transaction.status === TransactionStatus.Reversed ||
+        transaction.status === TransactionStatus.Failed
+      ) {
+        return transaction.reference;
+      }
+
+      transaction.failureReason =
+        input.failureReason ?? 'Provider payout was not completed.';
+
+      const existingReversal = await transactionRepository.findOne({
+        where: {
+          parentTransactionId: transaction.id,
+          type: TransactionType.Reversal,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (existingReversal !== null) {
+        this.transactionsService.transition(
+          transaction,
+          TransactionStatus.Reversed,
+        );
+        await transactionRepository.save(transaction);
+        return transaction.reference;
+      }
+
+      if (transaction.walletId === null) {
+        this.transactionsService.transition(
+          transaction,
+          TransactionStatus.Failed,
+        );
+        await transactionRepository.save(transaction);
+        return transaction.reference;
+      }
+
+      const amount = Number(transaction.amount);
+      const lockedWallet = await this.walletsService.lockWallet(
+        manager,
+        transaction.walletId,
+      );
+      const balance = this.walletsService.creditLockedWallet(
+        lockedWallet,
+        amount,
+      );
+      const reversal = this.transactionsService.createEntity({
+        userId: transaction.userId,
+        walletId: lockedWallet.id,
+        parentTransactionId: transaction.id,
+        type: TransactionType.Reversal,
+        direction: TransactionDirection.Credit,
+        amount,
+        currency: transaction.currency,
+        description: 'Bank transfer reversal',
+        externalReference: input.providerReference,
+        metadata: {
+          originalTransactionReference: transaction.reference,
+          providerEventId: input.providerEventId,
+          providerReference: input.providerReference,
+          payoutStatus: input.status,
+          ...(input.metadata ?? {}),
+        },
+      });
+      reversal.provider = input.provider;
+      reversal.providerReference = input.providerReference;
+      this.transactionsService.transition(
+        reversal,
+        TransactionStatus.Processing,
+      );
+      this.transactionsService.transition(
+        reversal,
+        TransactionStatus.Successful,
+      );
+      const savedReversal = await manager.save(reversal);
+
+      await manager.save(Wallet, lockedWallet);
+      const ledgerEntry = this.walletsService.createLedgerEntry({
+        wallet: lockedWallet,
+        transaction: savedReversal,
+        direction: LedgerDirection.Credit,
+        entryType: WalletLedgerEntryType.Reversal,
+        amount,
+        balanceBefore: balance.before,
+        balanceAfter: balance.after,
+        metadata: {
+          originalTransactionReference: transaction.reference,
+          providerEventId: input.providerEventId,
+          providerReference: input.providerReference,
+          payoutStatus: input.status,
+          ...(input.metadata ?? {}),
+        },
+      });
+      await manager.save(WalletLedgerEntry, ledgerEntry);
+
+      this.transactionsService.transition(
+        transaction,
+        TransactionStatus.Reversed,
+      );
+      await transactionRepository.save(transaction);
+      return transaction.reference;
+    });
+  }
+
+  private extractNombaPayoutWebhook(
+    event: WebhookEvent,
+  ): PayoutWebhookInput | null {
+    const eventType = event.eventType.toLowerCase();
+    const data = this.asRecord(event.payload.data);
+    const transaction = this.asRecord(data.transaction);
+    const transactionType = this.readString(transaction.type)?.toLowerCase();
+    const transactionReference =
+      this.readString(transaction.merchantTxRef) ??
+      this.readString(transaction.merchantReference) ??
+      this.readString(transaction.merchantTransactionReference);
+    const providerReference =
+      this.readString(transaction.transactionId) ??
+      this.readString(transaction.id) ??
+      this.readString(transaction.reference) ??
+      transactionReference;
+
+    const looksLikePayout =
+      eventType.includes('payout') ||
+      eventType.includes('transfer') ||
+      transactionType === 'bank_transfer' ||
+      transactionType === 'bank-transfer' ||
+      transactionType === 'transfer' ||
+      transactionReference?.startsWith('txn_') === true;
+
+    if (!looksLikePayout || providerReference === undefined) {
+      return null;
+    }
+
+    const rawStatus = this.readString(transaction.status)?.toLowerCase();
+    const status = this.mapNombaPayoutWebhookStatus(eventType, rawStatus);
+
+    if (status === null) {
+      return null;
+    }
+
+    return {
+      provider: event.provider,
+      providerEventId: event.providerEventId,
+      providerReference,
+      transactionReference,
+      status,
+      amount: this.readAmount(transaction.transactionAmount),
+      currency: this.readString(transaction.currency),
+      failureReason:
+        this.readString(transaction.failureReason) ??
+        this.readString(transaction.responseMessage) ??
+        this.readString(transaction.statusMessage),
+      metadata: {
+        transactionType,
+        rawStatus,
+        eventType: event.eventType,
+      },
+    };
+  }
+
+  private mapNombaPayoutWebhookStatus(
+    eventType: string,
+    rawStatus: string | undefined,
+  ): 'successful' | 'failed' | 'reversed' | null {
+    if (
+      eventType.includes('refund') ||
+      eventType.includes('reversal') ||
+      eventType.includes('reversed') ||
+      rawStatus === 'refund' ||
+      rawStatus === 'refunded' ||
+      rawStatus === 'reversal' ||
+      rawStatus === 'reversed'
+    ) {
+      return 'reversed';
+    }
+
+    if (
+      eventType.includes('failed') ||
+      eventType.includes('failure') ||
+      rawStatus === 'failed' ||
+      rawStatus === 'failure'
+    ) {
+      return 'failed';
+    }
+
+    if (
+      eventType.includes('success') ||
+      rawStatus === 'success' ||
+      rawStatus === 'successful' ||
+      rawStatus === 'completed'
+    ) {
+      return 'successful';
+    }
+
+    return null;
   }
 
   private extractNombaVirtualAccountFunding(

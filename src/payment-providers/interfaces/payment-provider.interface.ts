@@ -185,6 +185,19 @@ export interface ProviderVirtualAccount {
   metadata: Record<string, unknown>;
 }
 
+export interface DisableVirtualAccountInput {
+  providerAccountId: string;
+  accountNumber?: string | null;
+}
+
+export interface ProviderVirtualAccountActionResult {
+  provider: string;
+  providerAccountId: string;
+  status: 'disabled' | 'pending' | 'failed';
+  failureReason?: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface ProviderBank {
   name: string;
   code: string;
@@ -287,6 +300,9 @@ export interface PaymentProvider {
   createVirtualAccount(
     input: CreateVirtualAccountInput,
   ): Promise<ProviderVirtualAccount>;
+  disableVirtualAccount(
+    input: DisableVirtualAccountInput,
+  ): Promise<ProviderVirtualAccountActionResult>;
   listBanks(): Promise<ProviderBank[]>;
   resolveBankAccount(
     input: ResolveBankAccountInput,

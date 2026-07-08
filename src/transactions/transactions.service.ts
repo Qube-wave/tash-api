@@ -211,9 +211,7 @@ export class TransactionsService {
   }
 
   async getEntityByReference(reference: string): Promise<Transaction> {
-    const transaction = await this.transactionsRepository.findOne({
-      where: { reference },
-    });
+    const transaction = await this.findEntityByReference(reference);
 
     if (transaction === null) {
       throw new AppException(
@@ -224,6 +222,21 @@ export class TransactionsService {
     }
 
     return transaction;
+  }
+
+  async findEntityByReference(reference: string): Promise<Transaction | null> {
+    return this.transactionsRepository.findOne({
+      where: { reference },
+    });
+  }
+
+  async findByProviderReference(
+    provider: string,
+    providerReference: string,
+  ): Promise<Transaction | null> {
+    return this.transactionsRepository.findOne({
+      where: { provider, providerReference },
+    });
   }
 
   async getForUser(userId: number, uuid: string): Promise<TransactionResponse> {
@@ -242,6 +255,15 @@ export class TransactionsService {
     userId: number,
     reference: string,
   ): Promise<TransactionResponse> {
+    return this.toResponse(
+      await this.getEntityByReferenceForUser(userId, reference),
+    );
+  }
+
+  async getEntityByReferenceForUser(
+    userId: number,
+    reference: string,
+  ): Promise<Transaction> {
     const transaction = await this.transactionsRepository.findOne({
       where: { userId, reference },
     });
@@ -250,7 +272,7 @@ export class TransactionsService {
       throw new NotFoundException('Transaction was not found.');
     }
 
-    return this.toResponse(transaction);
+    return transaction;
   }
 
   private parseCursor(cursor: string | undefined): number | undefined {

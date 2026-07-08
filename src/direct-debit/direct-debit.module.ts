@@ -24,6 +24,6 @@ import { DirectDebitMandate } from './entities/direct-debit-mandate.entity';
   ],
   controllers: [DirectDebitController, DirectDebitFundingController],
   providers: [DirectDebitService, DirectDebitFundingService],
-  exports: [DirectDebitService, TypeOrmModule],
+  exports: [DirectDebitService, DirectDebitFundingService, TypeOrmModule],
 })
 export class DirectDebitModule {}

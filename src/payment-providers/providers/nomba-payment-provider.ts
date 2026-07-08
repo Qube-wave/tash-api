@@ -20,6 +20,7 @@ import {
   CreateDirectDebitMandateInput,
   CreateProviderCustomerInput,
   CreateVirtualAccountInput,
+  DisableVirtualAccountInput,
   InitializeCardRegistrationInput,
   NormalizedWebhookEvent,
   PaymentProvider,
@@ -36,6 +37,7 @@ import {
   ProviderTransaction,
   ProviderTransferResult,
   ProviderVirtualAccount,
+  ProviderVirtualAccountActionResult,
   RefundPaymentInput,
   ResolveBankAccountInput,
   SendBankTransferInput,
@@ -138,6 +140,20 @@ interface NombaBankTransferData {
   timeCreated?: unknown;
   meta?: unknown;
   message?: unknown;
+}
+
+interface NombaTransactionLookupData {
+  id?: unknown;
+  transactionId?: unknown;
+  reference?: unknown;
+  status?: unknown;
+  type?: unknown;
+  amount?: unknown;
+  transactionAmount?: unknown;
+  currency?: unknown;
+  message?: unknown;
+  responseMessage?: unknown;
+  meta?: unknown;
 }
 
 interface NombaDirectDebitMandateData {
@@ -895,6 +911,42 @@ export class NombaPaymentProvider implements PaymentProvider {
     };
   }
 
+  async disableVirtualAccount(
+    input: DisableVirtualAccountInput,
+  ): Promise<ProviderVirtualAccountActionResult> {
+    const accountIdentifier = encodeURIComponent(input.providerAccountId);
+    const response = await this.request<NombaEnvelope<unknown>>({
+      method: 'PUT',
+      url: `/v1/accounts/suspend/${accountIdentifier}`,
+      accountScoped: true,
+    });
+
+    if (!this.isSuccessfulEnvelope(response.data)) {
+      return {
+        provider: 'nomba',
+        providerAccountId: input.providerAccountId,
+        status: 'failed',
+        failureReason:
+          this.readDescription(response.data) ??
+          'Virtual account disable failed.',
+        metadata: {
+          ...this.safeProviderMetadata(response.data),
+          accountNumber: input.accountNumber,
+        },
+      };
+    }
+
+    return {
+      provider: 'nomba',
+      providerAccountId: input.providerAccountId,
+      status: 'disabled',
+      metadata: {
+        ...this.safeProviderMetadata(response.data.data),
+        accountNumber: input.accountNumber,
+      },
+    };
+  }
+
   async listBanks(): Promise<ProviderBank[]> {
     const response = await this.request<NombaEnvelope<unknown>>({
       method: 'GET',
@@ -1006,9 +1058,37 @@ export class NombaPaymentProvider implements PaymentProvider {
     return Promise.reject(this.notImplemented('refundPayment'));
   }
 
-  verifyTransaction(reference: string): Promise<ProviderTransaction> {
-    void reference;
-    return Promise.reject(this.notImplemented('verifyTransaction'));
+  async verifyTransaction(reference: string): Promise<ProviderTransaction> {
+    const response = await this.request<
+      NombaEnvelope<NombaTransactionLookupData>
+    >({
+      method: 'GET',
+      url: `/v1/transactions/accounts/single?transactionRef=${encodeURIComponent(reference)}`,
+      accountScoped: true,
+    });
+    const data = this.readNombaTransactionLookupData(
+      this.assertSuccessfulEnvelope(
+        response.data,
+        'Transaction verification failed.',
+      ),
+    );
+    const status = this.mapNombaProviderTransactionStatus(data.status);
+    const meta = this.asRecord(data.meta);
+    const providerReference =
+      this.readString(data.transactionId) ??
+      this.readString(data.id) ??
+      this.readString(data.reference) ??
+      this.readString(meta.merchantTxRef) ??
+      reference;
+
+    return {
+      provider: 'nomba',
+      providerReference,
+      status,
+      amount: this.readAmount(data.transactionAmount ?? data.amount),
+      currency: this.readString(data.currency),
+      metadata: this.safeProviderMetadata(data),
+    };
   }
 
   async verifyWebhook(
@@ -1353,6 +1433,30 @@ export class NombaPaymentProvider implements PaymentProvider {
     return record as NombaDirectDebitMandateData;
   }
 
+  private readNombaTransactionLookupData(
+    value: unknown,
+  ): NombaTransactionLookupData {
+    const record = this.asRecord(value);
+    const transaction = record.transaction;
+
+    if (transaction !== null && typeof transaction === 'object') {
+      return transaction as NombaTransactionLookupData;
+    }
+
+    const items = record.items;
+    if (Array.isArray(items)) {
+      const firstItem = items.find(
+        (item) => item !== null && typeof item === 'object',
+      );
+
+      if (firstItem !== undefined) {
+        return firstItem as NombaTransactionLookupData;
+      }
+    }
+
+    return record as NombaTransactionLookupData;
+  }
+
   private normalizeNombaDirectDebitBankCode(bankCode: string): string {
     const digits = bankCode.replace(/\D/g, '');
 
@@ -1453,6 +1557,41 @@ export class NombaPaymentProvider implements PaymentProvider {
     return 'pending';
   }
 
+  private mapNombaProviderTransactionStatus(
+    status: unknown,
+  ): ProviderTransaction['status'] {
+    const normalized = this.readString(status)
+      ?.replace(/[\s-]+/g, '_')
+      .toUpperCase();
+
+    if (
+      normalized === 'SUCCESS' ||
+      normalized === 'SUCCESSFUL' ||
+      normalized === 'COMPLETED'
+    ) {
+      return 'successful';
+    }
+
+    if (
+      normalized === 'REFUND' ||
+      normalized === 'REFUNDED' ||
+      normalized === 'REVERSAL' ||
+      normalized === 'REVERSED'
+    ) {
+      return 'reversed';
+    }
+
+    if (
+      normalized === 'FAILED' ||
+      normalized === 'FAILURE' ||
+      normalized === 'DECLINED'
+    ) {
+      return 'failed';
+    }
+
+    return 'pending';
+  }
+
   private isSuccessfulNombaDirectDebitCharge(status: unknown): boolean {
     if (status === true) {
       return true;
@@ -1510,6 +1649,17 @@ export class NombaPaymentProvider implements PaymentProvider {
     return typeof value === 'string' && value.trim() !== ''
       ? value.trim()
       : undefined;
+  }
+
+  private readAmount(value: unknown): number | undefined {
+    const amount =
+      typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+          ? Number(value)
+          : Number.NaN;
+
+    return Number.isFinite(amount) ? Math.round(amount) : undefined;
   }
 
   private isFalseLike(value: unknown): boolean {

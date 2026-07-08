@@ -118,7 +118,33 @@ export class VirtualAccountsService {
 
   async disable(userId: number, uuid: string): Promise<VirtualAccountResponse> {
     const account = await this.getForUser(userId, uuid);
+
+    if (account.status === VirtualAccountStatus.Disabled) {
+      return this.toResponse(account);
+    }
+
+    const provider = this.providerFactory.getProvider();
+    const providerResult = await provider.disableVirtualAccount({
+      providerAccountId: account.providerAccountId,
+      accountNumber: account.accountNumber,
+    });
+
+    if (providerResult.status === 'failed') {
+      throw new AppException(
+        ErrorCode.ProviderUnavailable,
+        providerResult.failureReason ?? 'Virtual account disable failed.',
+        502,
+        providerResult.metadata,
+      );
+    }
+
     account.status = VirtualAccountStatus.Disabled;
+    account.metadata = {
+      ...account.metadata,
+      disableProviderReference: providerResult.providerAccountId,
+      disableProviderStatus: providerResult.status,
+    };
+
     return this.toResponse(await this.virtualAccountsRepository.save(account));
   }
 

@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BanksModule } from '../banks/banks.module';
+import { CardsModule } from '../cards/cards.module';
+import { DirectDebitModule } from '../direct-debit/direct-debit.module';
 import { PaymentProvidersModule } from '../payment-providers/payment-providers.module';
 import { IdempotencyModule } from '../idempotency/idempotency.module';
 import { SettingsModule } from '../settings/settings.module';
@@ -12,6 +14,8 @@ import { TransfersService } from './transfers.service';
 @Module({
   imports: [
     BanksModule,
+    CardsModule,
+    DirectDebitModule,
     IdempotencyModule,
     PaymentProvidersModule,
     SettingsModule,

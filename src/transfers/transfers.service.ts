@@ -1,16 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { BanksService } from '../banks/banks.service';
+import { CardFundingService } from '../cards/card-funding.service';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
+import { DirectDebitFundingService } from '../direct-debit/direct-debit-funding.service';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
 import { SettingsService } from '../settings/settings.service';
 import {
+  Transaction,
   TransactionDirection,
   TransactionStatus,
   TransactionType,
 } from '../transactions/entities/transaction.entity';
-import { TransactionsService } from '../transactions/transactions.service';
+import {
+  TransactionResponse,
+  TransactionsService,
+} from '../transactions/transactions.service';
 import { UsersService } from '../users/users.service';
 import {
   LedgerDirection,
@@ -22,6 +28,7 @@ import { WalletsService } from '../wallets/wallets.service';
 import { assertBankTransferAccountNameMatches } from './bank-transfer-policy';
 import { CreateBankTransferDto } from './dto/create-bank-transfer.dto';
 import { CreateTashTransferDto } from './dto/create-tash-transfer.dto';
+import { TransferFundingSource } from './dto/transfer-funding-source.enum';
 import {
   assertNotSelfTransfer,
   assertTransferCurrencyMatchesWallet,
@@ -53,6 +60,11 @@ export interface BankTransferResponse {
   accountName: string;
 }
 
+interface TransferFundingResult {
+  source: TransferFundingSource;
+  transactionReference?: string;
+}
+
 @Injectable()
 export class TransfersService {
   constructor(
@@ -63,6 +75,8 @@ export class TransfersService {
     private readonly settingsService: SettingsService,
     private readonly banksService: BanksService,
     private readonly providerFactory: PaymentProviderFactory,
+    private readonly cardFundingService: CardFundingService,
+    private readonly directDebitFundingService: DirectDebitFundingService,
   ) {}
 
   async createTashTransfer(
@@ -95,9 +109,10 @@ export class TransfersService {
       dto.currency,
     );
 
-    await this.settingsService.validateTransactionPin(
+    const funding = await this.prepareTransferFundingSource(
       senderUserId,
-      dto.transactionPin,
+      dto.walletUuid,
+      dto,
     );
 
     return this.dataSource.transaction(async (manager) => {
@@ -140,6 +155,8 @@ export class TransfersService {
           recipientUserUuid: recipient.uuid,
           recipientPaymentTag: recipient.paymentTag,
           transferKind: 'tash_to_tash',
+          fundingSource: funding.source,
+          fundingTransactionReference: funding.transactionReference,
         },
       });
       this.transactionsService.transition(
@@ -162,7 +179,11 @@ export class TransfersService {
           amount: dto.amount,
           balanceBefore: senderBalance.before,
           balanceAfter: senderBalance.after,
-          metadata: { recipientUserUuid: recipient.uuid },
+          metadata: {
+            recipientUserUuid: recipient.uuid,
+            fundingSource: funding.source,
+            fundingTransactionReference: funding.transactionReference,
+          },
         }),
         this.walletsService.createLedgerEntry({
           wallet: lockedRecipientWallet,
@@ -235,9 +256,10 @@ export class TransfersService {
       );
     }
 
-    await this.settingsService.validateTransactionPin(
+    const funding = await this.prepareTransferFundingSource(
       userId,
-      dto.transactionPin,
+      dto.walletUuid,
+      dto,
     );
     const provider = this.providerFactory.getProvider();
 
@@ -261,6 +283,8 @@ export class TransfersService {
         description: dto.description ?? 'Bank transfer',
         metadata: {
           transferKind: 'bank_transfer',
+          fundingSource: funding.source,
+          fundingTransactionReference: funding.transactionReference,
           bankCode: dto.bankCode,
           accountNumberLastFour: dto.accountNumber.slice(-4),
           accountName: resolvedAccount.accountName,
@@ -318,6 +342,8 @@ export class TransfersService {
         balanceAfter: balance.after,
         metadata: {
           transferKind: 'bank_transfer',
+          fundingSource: funding.source,
+          fundingTransactionReference: funding.transactionReference,
           bankCode: dto.bankCode,
           accountNumberLastFour: dto.accountNumber.slice(-4),
           accountName: resolvedAccount.accountName,
@@ -337,5 +363,266 @@ export class TransfersService {
         accountName: resolvedAccount.accountName,
       };
     });
+  }
+
+  async requeryTransfer(
+    userId: number,
+    reference: string,
+  ): Promise<TransactionResponse> {
+    const transaction =
+      await this.transactionsService.getEntityByReferenceForUser(
+        userId,
+        reference,
+      );
+
+    if (
+      transaction.provider === null &&
+      transaction.providerReference === null
+    ) {
+      throw new AppException(
+        ErrorCode.BadRequest,
+        'Only provider-backed transfers can be re-queried.',
+        400,
+      );
+    }
+
+    const providerTransaction = await this.providerFactory
+      .getProvider()
+      .verifyTransaction(
+        transaction.providerReference ?? transaction.reference,
+      );
+
+    return this.finalizeProviderTransfer(transaction, providerTransaction);
+  }
+
+  private async finalizeProviderTransfer(
+    transaction: Transaction,
+    providerTransaction: {
+      provider: string;
+      providerReference: string;
+      status: 'pending' | 'successful' | 'failed' | 'reversed';
+      metadata: Record<string, unknown>;
+    },
+  ): Promise<TransactionResponse> {
+    if (providerTransaction.status === 'pending') {
+      transaction.provider = providerTransaction.provider;
+      transaction.providerReference = providerTransaction.providerReference;
+      return this.transactionsService.toResponse(
+        await this.transactionsService.save(transaction),
+      );
+    }
+
+    return this.dataSource.transaction(async (manager) => {
+      const transactionRepository = manager.getRepository(Transaction);
+      const lockedTransaction = await transactionRepository.findOne({
+        where: { id: transaction.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (lockedTransaction === null) {
+        throw new AppException(
+          ErrorCode.TransactionNotFound,
+          'Transaction was not found.',
+          404,
+        );
+      }
+
+      lockedTransaction.provider = providerTransaction.provider;
+      lockedTransaction.providerReference =
+        providerTransaction.providerReference;
+
+      if (providerTransaction.status === 'successful') {
+        if (
+          lockedTransaction.status === TransactionStatus.Reversed ||
+          lockedTransaction.status === TransactionStatus.Failed
+        ) {
+          return this.transactionsService.toResponse(lockedTransaction);
+        }
+
+        if (lockedTransaction.status !== TransactionStatus.Successful) {
+          this.transactionsService.transition(
+            lockedTransaction,
+            TransactionStatus.Successful,
+          );
+        }
+
+        return this.transactionsService.toResponse(
+          await transactionRepository.save(lockedTransaction),
+        );
+      }
+
+      if (
+        lockedTransaction.status === TransactionStatus.Reversed ||
+        lockedTransaction.status === TransactionStatus.Failed
+      ) {
+        return this.transactionsService.toResponse(lockedTransaction);
+      }
+
+      lockedTransaction.failureReason =
+        this.readProviderFailureReason(providerTransaction.metadata) ??
+        'Provider transfer was not completed.';
+
+      const existingReversal = await transactionRepository.findOne({
+        where: {
+          parentTransactionId: lockedTransaction.id,
+          type: TransactionType.Reversal,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (existingReversal === null && lockedTransaction.walletId !== null) {
+        const amount = Number(lockedTransaction.amount);
+        const lockedWallet = await this.walletsService.lockWallet(
+          manager,
+          lockedTransaction.walletId,
+        );
+        const balance = this.walletsService.creditLockedWallet(
+          lockedWallet,
+          amount,
+        );
+        const reversal = this.transactionsService.createEntity({
+          userId: lockedTransaction.userId,
+          walletId: lockedWallet.id,
+          parentTransactionId: lockedTransaction.id,
+          type: TransactionType.Reversal,
+          direction: TransactionDirection.Credit,
+          amount,
+          currency: lockedTransaction.currency,
+          description: 'Transfer reversal',
+          externalReference: providerTransaction.providerReference,
+          metadata: {
+            originalTransactionReference: lockedTransaction.reference,
+            providerReference: providerTransaction.providerReference,
+            providerStatus: providerTransaction.status,
+          },
+        });
+        reversal.provider = providerTransaction.provider;
+        reversal.providerReference = providerTransaction.providerReference;
+        this.transactionsService.transition(
+          reversal,
+          TransactionStatus.Processing,
+        );
+        this.transactionsService.transition(
+          reversal,
+          TransactionStatus.Successful,
+        );
+        const savedReversal = await manager.save(reversal);
+
+        await manager.save(Wallet, lockedWallet);
+        await manager.save(
+          WalletLedgerEntry,
+          this.walletsService.createLedgerEntry({
+            wallet: lockedWallet,
+            transaction: savedReversal,
+            direction: LedgerDirection.Credit,
+            entryType: WalletLedgerEntryType.Reversal,
+            amount,
+            balanceBefore: balance.before,
+            balanceAfter: balance.after,
+            metadata: {
+              originalTransactionReference: lockedTransaction.reference,
+              providerReference: providerTransaction.providerReference,
+              providerStatus: providerTransaction.status,
+            },
+          }),
+        );
+      }
+
+      this.transactionsService.transition(
+        lockedTransaction,
+        lockedTransaction.walletId === null
+          ? TransactionStatus.Failed
+          : TransactionStatus.Reversed,
+      );
+
+      return this.transactionsService.toResponse(
+        await transactionRepository.save(lockedTransaction),
+      );
+    });
+  }
+
+  private readProviderFailureReason(
+    metadata: Record<string, unknown>,
+  ): string | undefined {
+    const message = metadata.message ?? metadata.responseMessage;
+    return typeof message === 'string' && message.trim() !== ''
+      ? message.trim()
+      : undefined;
+  }
+
+  private async prepareTransferFundingSource(
+    userId: number,
+    walletUuid: string,
+    dto: {
+      amount: number;
+      currency: string;
+      transactionPin: string;
+      fundingSource?: TransferFundingSource;
+      cardUuid?: string;
+      mandateUuid?: string;
+    },
+  ): Promise<TransferFundingResult> {
+    const source = dto.fundingSource ?? TransferFundingSource.Wallet;
+
+    if (source === TransferFundingSource.Wallet) {
+      await this.settingsService.validateTransactionPin(
+        userId,
+        dto.transactionPin,
+      );
+      return { source };
+    }
+
+    if (source === TransferFundingSource.VirtualAccount) {
+      throw new AppException(
+        ErrorCode.TransferFailed,
+        'Virtual account funding is asynchronous. Fund the virtual account first, wait for the wallet credit, then transfer from wallet.',
+        400,
+      );
+    }
+
+    if (source === TransferFundingSource.Card) {
+      if (dto.cardUuid === undefined) {
+        throw new AppException(
+          ErrorCode.BadRequest,
+          'cardUuid is required when fundingSource is card.',
+          400,
+        );
+      }
+
+      const funding = await this.cardFundingService.fundWalletWithCard(
+        userId,
+        walletUuid,
+        {
+          cardUuid: dto.cardUuid,
+          amount: dto.amount,
+          currency: dto.currency,
+          transactionPin: dto.transactionPin,
+        },
+      );
+
+      return { source, transactionReference: funding.reference };
+    }
+
+    if (dto.mandateUuid === undefined) {
+      throw new AppException(
+        ErrorCode.BadRequest,
+        'mandateUuid is required when fundingSource is direct_debit.',
+        400,
+      );
+    }
+
+    const funding =
+      await this.directDebitFundingService.fundWalletWithDirectDebit(
+        userId,
+        walletUuid,
+        {
+          mandateUuid: dto.mandateUuid,
+          amount: dto.amount,
+          currency: dto.currency,
+          transactionPin: dto.transactionPin,
+        },
+      );
+
+    return { source, transactionReference: funding.reference };
   }
 }

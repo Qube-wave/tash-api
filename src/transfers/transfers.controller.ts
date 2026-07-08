@@ -101,6 +101,14 @@ export class TransfersController {
     }
   }
 
+  @Post(':reference/requery')
+  requeryTransfer(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reference') reference: string,
+  ): Promise<TransactionResponse> {
+    return this.transfersService.requeryTransfer(user.id, reference);
+  }
+
   @Get(':reference')
   getTransfer(
     @CurrentUser() user: AuthenticatedUser,
