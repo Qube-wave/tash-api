@@ -48,14 +48,15 @@ export class CreateDirectDebitMandateDto {
 }
 
 export class AuthorizeDirectDebitMandateDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Provider authorization reference returned when the mandate was created.',
+      'Provider authorization reference returned when the mandate was created. If omitted, the saved mandate reference is used.',
     example: '1234567890',
   })
+  @IsOptional()
   @IsString()
   @MaxLength(120)
-  authorizationReference!: string;
+  authorizationReference?: string;
 }
 
 export class FundWalletWithDirectDebitDto {

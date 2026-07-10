@@ -117,7 +117,7 @@ export class DirectDebitService {
       }),
     );
 
-    console.log(mandate)
+    console.log(mandate);
 
     return this.toResponse(mandate);
   }
@@ -155,17 +155,21 @@ export class DirectDebitService {
   async authorize(
     userId: number,
     uuid: string,
-    dto: AuthorizeDirectDebitMandateDto,
+    dto: AuthorizeDirectDebitMandateDto = {},
   ): Promise<DirectDebitMandateResponse> {
     const mandate = await this.getForUser(userId, uuid);
+    const authorizationReference =
+      dto.authorizationReference ??
+      mandate.authorizationReference ??
+      mandate.providerMandateId;
     const provider = this.providerFactory.getProvider();
     const providerMandate = await provider.authorizeDirectDebitMandate({
       providerMandateId: mandate.providerMandateId,
-      authorizationReference: dto.authorizationReference,
+      authorizationReference,
     });
 
     mandate.authorizationReference =
-      providerMandate.authorizationReference ?? dto.authorizationReference;
+      providerMandate.authorizationReference ?? authorizationReference;
     mandate.status = this.mapProviderStatus(providerMandate.status);
     mandate.failureReason = providerMandate.failureReason ?? null;
     if (mandate.status === DirectDebitMandateStatus.Active) {
@@ -256,7 +260,7 @@ export class DirectDebitService {
       revokedAt: mandate.revokedAt,
       failureReason: mandate.failureReason,
       createdAt: mandate.createdAt,
-      metadata: mandate.metadata
+      metadata: mandate.metadata,
     };
   }
 }
