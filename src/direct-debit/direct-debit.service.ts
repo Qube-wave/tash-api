@@ -36,6 +36,7 @@ export interface DirectDebitMandateResponse {
   revokedAt: Date | null;
   failureReason: string | null;
   createdAt: Date;
+  metadata?: Record<string, unknown> | null;
 }
 
 @Injectable()
@@ -115,6 +116,8 @@ export class DirectDebitService {
         metadata: providerMandate.metadata,
       }),
     );
+
+    console.log(mandate)
 
     return this.toResponse(mandate);
   }
@@ -253,6 +256,7 @@ export class DirectDebitService {
       revokedAt: mandate.revokedAt,
       failureReason: mandate.failureReason,
       createdAt: mandate.createdAt,
+      metadata: mandate.metadata
     };
   }
 }
