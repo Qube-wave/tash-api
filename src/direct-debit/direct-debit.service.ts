@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { AppException } from '../common/errors/app.exception';
 import { ErrorCode } from '../common/errors/error-code';
 import { PaymentProviderFactory } from '../payment-providers/payment-provider.factory';
@@ -121,7 +121,7 @@ export class DirectDebitService {
 
   async listForUser(userId: number): Promise<DirectDebitMandateResponse[]> {
     const mandates = await this.mandatesRepository.find({
-      where: { userId },
+      where: { userId, status: Not(DirectDebitMandateStatus.Revoked) },
       order: { createdAt: 'DESC' },
     });
     return mandates.map((mandate) => this.toResponse(mandate));
