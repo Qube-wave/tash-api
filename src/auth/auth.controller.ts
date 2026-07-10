@@ -1,5 +1,5 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import type { PublicUserProfile } from '../users/users.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';

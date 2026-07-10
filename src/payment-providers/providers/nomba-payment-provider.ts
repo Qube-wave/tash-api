@@ -672,6 +672,22 @@ export class NombaPaymentProvider implements PaymentProvider {
         startImmediately: true,
       },
     });
+
+    this.logger.debug('Nomba direct debit mandate creation response', {
+      response: this.safeDirectDebitEnvelopeMetadata(response.data),
+      request: {
+        bankCode,
+        customerEmail: input.customerEmail,
+        customerPhoneNumber,
+        customerAccountNumberLastFour: this.extractLastFourDigits(
+          input.accountNumber,
+        ),
+        merchantReference,
+        startDate: this.formatNombaDateTime(startDate),
+        endDate: this.formatNombaDateTime(endDate),
+      },
+    });
+
     if (
       !this.isSuccessfulEnvelope(response.data) ||
       response.data.data === undefined
@@ -725,7 +741,26 @@ export class NombaPaymentProvider implements PaymentProvider {
         ...this.safeDirectDebitMetadata(data),
         merchantReference:
           this.readString(data.merchantReference) ?? merchantReference,
-        authorizationDescription: this.readString(data.description),
+        authorizationDescription: this.buildDirectDebitAuthorizationDescription(
+          data,
+          {
+            authorizationReference:
+              this.readString(data.merchantReference) ?? merchantReference,
+            bankCode: this.readString(data.bankCode) ?? bankCode,
+            accountNumberLastFour: this.extractLastFourDigits(
+              this.readString(data.customerAccountNumber) ??
+                input.accountNumber,
+            ),
+          },
+        ),
+        authorizationSteps: this.buildDirectDebitAuthorizationSteps(data, {
+          authorizationReference:
+            this.readString(data.merchantReference) ?? merchantReference,
+          bankCode: this.readString(data.bankCode) ?? bankCode,
+          accountNumberLastFour: this.extractLastFourDigits(
+            this.readString(data.customerAccountNumber) ?? input.accountNumber,
+          ),
+        }),
       },
     };
   }
@@ -742,6 +777,12 @@ export class NombaPaymentProvider implements PaymentProvider {
       )}`,
       accountScoped: true,
     });
+    this.logger.debug('Nomba direct debit mandate status response', {
+      providerMandateId: input.providerMandateId,
+      authorizationReference: input.authorizationReference,
+      response: this.safeDirectDebitEnvelopeMetadata(response.data),
+    });
+
     const data = this.assertSuccessfulEnvelope(
       response.data,
       'Direct-debit mandate status check failed.',
@@ -762,6 +803,23 @@ export class NombaPaymentProvider implements PaymentProvider {
       metadata: {
         ...this.safeDirectDebitMetadata(data),
         authorizationReference: input.authorizationReference,
+        authorizationDescription: this.buildDirectDebitAuthorizationDescription(
+          data,
+          {
+            authorizationReference: input.authorizationReference,
+            bankCode: this.readString(data.bankCode),
+            accountNumberLastFour: this.extractOptionalLastFourDigits(
+              this.readString(data.customerAccountNumber),
+            ),
+          },
+        ),
+        authorizationSteps: this.buildDirectDebitAuthorizationSteps(data, {
+          authorizationReference: input.authorizationReference,
+          bankCode: this.readString(data.bankCode),
+          accountNumberLastFour: this.extractOptionalLastFourDigits(
+            this.readString(data.customerAccountNumber),
+          ),
+        }),
       },
     };
   }
@@ -1487,6 +1545,73 @@ export class NombaPaymentProvider implements PaymentProvider {
     }
 
     return normalized.slice(0, 150);
+  }
+
+  private buildDirectDebitAuthorizationDescription(
+    data: NombaDirectDebitMandateData,
+    input: {
+      authorizationReference: string;
+      bankCode?: string;
+      accountNumberLastFour?: string;
+    },
+  ): string {
+    const providerDescription = this.readString(data.description);
+
+    if (
+      providerDescription !== undefined &&
+      providerDescription.trim().length > 0
+    ) {
+      return providerDescription;
+    }
+
+    const bankText =
+      input.bankCode === undefined ? '' : ' for bank code ' + input.bankCode;
+    const accountText =
+      input.accountNumberLastFour === undefined
+        ? ''
+        : ' ending in ' + input.accountNumberLastFour;
+
+    return (
+      'Open your bank app or internet banking' +
+      bankText +
+      accountText +
+      ' and approve the direct debit mandate for Tash or Nomba. ' +
+      'If your bank asks for a reference, use ' +
+      input.authorizationReference +
+      '. Return here and tap Check status after approval.'
+    );
+  }
+
+  private buildDirectDebitAuthorizationSteps(
+    data: NombaDirectDebitMandateData,
+    input: {
+      authorizationReference: string;
+      bankCode?: string;
+      accountNumberLastFour?: string;
+    },
+  ): string[] {
+    const providerDescription = this.readString(data.description);
+
+    if (
+      providerDescription !== undefined &&
+      providerDescription.trim().length > 0
+    ) {
+      return [providerDescription, 'Return here and tap Check status.'];
+    }
+
+    const accountText =
+      input.accountNumberLastFour === undefined
+        ? 'the linked bank account'
+        : 'the linked bank account ending in ' + input.accountNumberLastFour;
+
+    return [
+      'Open your bank app or internet banking for ' + accountText + '.',
+      'Approve the direct debit mandate request for Tash or Nomba.',
+      'Use reference ' +
+        input.authorizationReference +
+        ' if your bank asks for one.',
+      'Return here and tap Check status.',
+    ];
   }
 
   private mapNombaDirectDebitMandateStatus(

@@ -1,3 +1,4 @@
+import { ApiProperty, ApiPropertyOptional } from '/swagger';
 import {
   IsISO4217CurrencyCode,
   IsInt,
@@ -8,49 +9,80 @@ import {
 } from 'class-validator';
 
 export class CreateDirectDebitMandateDto {
-  @IsString()
+  ({
+    description: 'Recipient bank code selected from the banks endpoint.',
+    example: '058',
+  })
+  ()
   @MaxLength(20)
   bankCode!: string;
 
-  @IsString()
-  @MaxLength(20)
+  ({
+    description: 'Customer bank account number to link for direct debit.',
+    example: '0123456789',
+  })
+  ()
+  (20)
   accountNumber!: string;
 
-  @IsString()
-  @MaxLength(120)
+  ({
+    description: 'Resolved account name returned by bank lookup.',
+    example: 'Test User',
+  })
+  ()
+  (120)
   accountName!: string;
 
-  @IsInt()
-  @Min(1)
+  ({
+    description: 'Maximum amount that can be debited through this mandate, in minor units.',
+    example: 5000000,
+  })
+  ()
+  (1)
   maximumAmount!: number;
 
-  @IsISO4217CurrencyCode()
+  ({ description: 'Mandate currency.', example: 'NGN' })
+  ()
   currency!: string;
 }
 
 export class AuthorizeDirectDebitMandateDto {
-  @IsString()
+  ({
+    description: 'Provider authorization reference returned when the mandate was created.',
+    example: '1234567890',
+  })
+  ()
   @MaxLength(120)
   authorizationReference!: string;
 }
 
 export class FundWalletWithDirectDebitDto {
-  @IsString()
+  ({ description: 'Direct debit mandate UUID.', example: 'mandate-uuid' })
+  ()
   mandateUuid!: string;
 
-  @IsInt()
-  @Min(1)
+  ({
+    description: 'Funding amount in minor units.',
+    example: 100000,
+  })
+  ()
+  (1)
   amount!: number;
 
   @IsISO4217CurrencyCode()
   currency!: string;
 
-  @IsString()
+  ({ description: 'User transaction PIN.', example: '1234' })
+  ()
   transactionPin!: string;
 }
 
 export class RevokeDirectDebitMandateDto {
-  @IsOptional()
+  ({
+    description: 'Reason for revoking the mandate.',
+    example: 'User revoked mandate',
+  })
+  ()
   @IsString()
   @MaxLength(200)
   reason?: string;
