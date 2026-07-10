@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
@@ -20,12 +20,12 @@ import {
 export class DirectDebitController {
   constructor(private readonly directDebitService: DirectDebitService) {}
 
-  ({
+  @ApiOperation({
     summary: 'Create a reusable direct debit mandate',
     description:
       'Links a user bank account as a reusable direct debit mandate. If the provider returns requires_authorization, show metadata.authorizationDescription or metadata.authorizationSteps to the user before checking status.',
   })
-  ('mandates')
+  @Post('mandates')
   createMandate(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateDirectDebitMandateDto,
@@ -33,16 +33,16 @@ export class DirectDebitController {
     return this.directDebitService.createMandate(user.uuid, dto);
   }
 
-  ({ summary: 'List authenticated user direct debit mandates' })
-  ('mandates')
+  @ApiOperation({ summary: 'List authenticated user direct debit mandates' })
+  @Get('mandates')
   listMandates(
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<DirectDebitMandateResponse[]> {
     return this.directDebitService.listForUser(user.id);
   }
 
-  ({ summary: 'Get a direct debit mandate by UUID' })
-  ('mandates/:uuid')
+  @ApiOperation({ summary: 'Get a direct debit mandate by UUID' })
+  @Get('mandates/:uuid')
   getMandate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('uuid') uuid: string,
@@ -50,12 +50,12 @@ export class DirectDebitController {
     return this.directDebitService.getResponseForUser(user.id, uuid);
   }
 
-  ({
+  @ApiOperation({
     summary: 'Check provider authorization status for a mandate',
     description:
       'Checks the provider status for an existing direct debit mandate. The bank details are not sent again; the endpoint uses the saved provider mandate ID and updates the local mandate status.',
   })
-  ('mandates/:uuid/authorize')
+  @Post('mandates/:uuid/authorize')
   authorizeMandate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('uuid') uuid: string,
@@ -64,8 +64,8 @@ export class DirectDebitController {
     return this.directDebitService.authorize(user.id, uuid, dto);
   }
 
-  ({ summary: 'Revoke a direct debit mandate' })
-  ('mandates/:uuid/revoke')
+  @ApiOperation({ summary: 'Revoke a direct debit mandate' })
+  @Post('mandates/:uuid/revoke')
   revokeMandate(
     @CurrentUser() user: AuthenticatedUser,
     @Param('uuid') uuid: string,

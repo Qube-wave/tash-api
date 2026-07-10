@@ -1,5 +1,5 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import type { PublicUserProfile } from '../users/users.service';
 import { CurrentUser } from '../common/auth/current-user.decorator';
@@ -123,6 +123,11 @@ export class AuthController {
     return this.authService.completeAccountEmailVerification(user.id, dto);
   }
 
+  @ApiOperation({
+    summary: 'Send OTP to update authenticated user phone number',
+    description:
+      'Sends an SMS OTP to a new phone number. The phone number is not saved until the OTP is completed.',
+  })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('me/phone/send-verification')
@@ -133,6 +138,11 @@ export class AuthController {
     return this.authService.sendAccountPhoneVerification(user.id, dto);
   }
 
+  @ApiOperation({
+    summary: 'Complete authenticated user phone number update',
+    description:
+      'Verifies the SMS OTP and saves the phone number on the authenticated user profile.',
+  })
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('me/phone/complete-verification')

@@ -6,7 +6,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthenticatedUser } from '../common/auth/authenticated-user';
 import { CurrentUser } from '../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
@@ -27,6 +27,11 @@ export class DirectDebitFundingController {
     private readonly idempotencyService: IdempotencyService,
   ) {}
 
+  @ApiOperation({
+    summary: 'Fund a wallet with an active direct debit mandate',
+    description:
+      'Debits a previously authorized direct debit mandate and credits the target wallet. Requires a transaction PIN and supports idempotency-key.',
+  })
   @Post()
   async fundWithDirectDebit(
     @CurrentUser() user: AuthenticatedUser,
